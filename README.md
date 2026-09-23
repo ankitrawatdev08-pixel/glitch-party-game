@@ -71,7 +71,7 @@ Players compete in simultaneous **8-second micro-challenges** (tapping targets, 
 
 ---
 
-## ☁️ Deployment Guide (Render & Railway)
+## ☁️ Deployment Guide (Render & Netlify)
 
 ### Option 1: Render.com (Recommended Free Tier)
 1. Push your repository to GitHub.
@@ -85,10 +85,13 @@ Players compete in simultaneous **8-second micro-challenges** (tapping targets, 
 5. Render automatically provides `process.env.PORT` and HTTPS WebSockets.
 6. Share your live `https://<app-name>.onrender.com` link!
 
-### Option 2: Railway.app
-1. Go to [Railway.app](https://railway.app) and click **New Project ➔ Deploy from GitHub repo**.
-2. Railway detects the `package.json` and runs `npm start` automatically.
-3. Under **Settings ➔ Networking**, click **Generate Domain** to get a public URL.
+### Option 2: Netlify
+1. Go to [Netlify.com](https://www.netlify.com) and click **Add new site ➔ Import an existing project**.
+2. Connect your GitHub account and select `glitch-party-game`.
+3. Configure build & deploy settings:
+   - **Build command**: `npm install`
+   - **Publish directory**: `public`
+4. Deploy the site and share your public link!
 
 ---
 
