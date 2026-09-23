@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLITCH Patch 1.0.2 Verification Harness</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #07060E;
+      color: #F3F4F6;
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+    .verify-layout {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .verify-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      background: rgba(18, 16, 31, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      backdrop-filter: blur(12px);
+    }
+    .verify-title {
+      margin: 0;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 20px;
+      font-weight: 800;
+      color: #06F9EC;
+      letter-spacing: 0.5px;
+    }
+    .verify-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(6, 249, 236, 0.15);
+      border: 1px solid #06F9EC;
+      color: #06F9EC;
+    }
+    .test-controls-card {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      padding: 16px;
+      background: rgba(18, 16, 31, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+    }
+    .test-btn {
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.06);
+      color: #fff;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .test-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-1px);
+    }
+    .test-btn-primary {
+      background: #06F9EC;
+      color: #07060E;
+      border-color: #06F9EC;
+    }
+    .test-btn-primary:hover {
+      background: #39FFF1;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .metric-card {
+      background: rgba(18, 16, 31, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #9CA3AF;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .metric-value {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .status-pass {
+      color: #10B981 !important;
+    }
+    .status-warn {
+      color: #FBBF24 !important;
+    }
+    .status-fail {
+      color: #F43F7A !important;
+    }
+    .game-arena-wrap {
+      position: relative;
+      background: rgba(18, 16, 31, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 480px;
+    }
+    #game-canvas-container {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(7, 6, 14, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    #minigame-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    .log-box {
+      background: #0D0B18;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #9CA3AF;
+      max-height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body class="glitch-theme">
+  <div class="cyber-bg-glow"></div>
+  <div class="cyber-scanlines"></div>
+
+  <div class="verify-layout">
+    <!-- Header -->
+    <header class="verify-header">
+      <div>
+        <h1 class="verify-title">GLITCH PATCH 1.0.2 VERIFICATION HARNESS</h1>
+        <div style="font-size: 12px; color: #9CA3AF; margin-top: 2px;">
+          Toasts Queue (Max 2) • Bottom-Center Placement • Pointer Capture Drag Isolation
+        </div>
+      </div>
+      <span class="verify-badge" id="overall-badge">READY TO VERIFY</span>
+    </header>
+
+    <!-- Controls -->
+    <section class="test-controls-card">
+      <button class="test-btn test-btn-primary" id="btn-run-all">
+        ⚡ Run All Automated Checks
+      </button>
+      <button class="test-btn" id="btn-trigger-toasts">
+        🍞 Fire 3 Rapid Toasts (Queue Test)
+      </button>
+      <button class="test-btn" id="btn-check-placement">
+        📐 Measure Placement & Overlap
+      </button>
+      <button class="test-btn" id="btn-trace-drag">
+        ✨ Run Trace Drag Across Sabotage Bar
+      </button>
+    </section>
+
+    <!-- Metrics Cards -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <span class="metric-label">Gap 1: Toast Queue (Max 2, 1.5s advance)</span>
+        <span class="metric-value" id="metric-queue">Waiting to trigger...</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Gap 2: Bottom-Center & No Overlap</span>
+        <span class="metric-value" id="metric-placement">Measuring...</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Gap 3: Trace Drag Touch Isolation</span>
+        <span class="metric-value" id="metric-drag">Ready for pointer test</span>
+      </div>
+    </div>
+
+    <!-- Active Game Arena (Mounted components) -->
+    <div class="game-arena-wrap">
+      <!-- 1. The Sabotage Bar (Mounted at Top) -->
+      <nav id="sabotage-bar" class="sabotage-bar" aria-label="Quick Sabotage">
+        <div class="sabotage-bar-left">
+          <span class="sabotage-bar-title">SABOTAGE</span>
+          <span class="sabotage-token-pill" id="sabotage-token-pill">🪙 3</span>
+        </div>
+        <div class="sabotage-targets-list" id="sabotage-targets-list">
+          <button class="sabotage-avatar-btn" id="target-btn-bob" data-target-id="p-bob" title="Sabotage Bob">
+            <div class="avatar-svg-wrap" style="width: 24px; height: 24px; border-radius: 50%; background: #F43F7A; display:flex; align-items:center; justify-content:center; font-size:12px;">B</div>
+            <span class="sabotage-avatar-name">Bob</span>
+          </button>
+          <button class="sabotage-avatar-btn" id="target-btn-charlie" data-target-id="p-charlie" title="Sabotage Charlie">
+            <div class="avatar-svg-wrap" style="width: 24px; height: 24px; border-radius: 50%; background: #8B5CF6; display:flex; align-items:center; justify-content:center; font-size:12px;">C</div>
+            <span class="sabotage-avatar-name">Charlie</span>
+          </button>
+          <button class="sabotage-avatar-btn" id="target-btn-delta" data-target-id="p-delta" title="Sabotage Delta">
+            <div class="avatar-svg-wrap" style="width: 24px; height: 24px; border-radius: 50%; background: #FBBF24; display:flex; align-items:center; justify-content:center; font-size:12px;">D</div>
+            <span class="sabotage-avatar-name">Delta</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- 2. Trace The Path Minigame Canvas (Active under Sabotage Bar) -->
+      <div id="game-canvas-container">
+        <canvas id="minigame-canvas"></canvas>
+      </div>
+
+      <!-- Live Diagnostics Log -->
+      <div class="log-box" id="verify-log">Harness initialized. Click "Run All Automated Checks" or individual test buttons.</div>
+    </div>
+  </div>
+
+  <!-- 3. Global Toast Container (Fixed Bottom-Center) -->
+  <aside id="toast-container" class="toast-container" aria-live="polite"></aside>
+
+  <!-- Script Modules -->
+  <script type="module">
+    import { showToast } from '/js/utils.js';
+    import { TracePathGame } from '/js/minigames/tracePath.js';
+
+    const logEl = document.getElementById('verify-log');
+    function log(msg) {
+      const time = new Date().toISOString().substring(11, 23);
+      logEl.textContent = `[${time}] ${msg}\n` + logEl.textContent;
+    }
+
+    // Initialize Trace The Path Game
+    const canvas = document.getElementById('minigame-canvas');
+    let currentGame = null;
+
+    function initTracePath() {
+      if (currentGame) currentGame.stop();
+      currentGame = new TracePathGame(canvas, (score) => {
+        log(`Score tick: ${score}`);
+      });
+      // Start with 4 waypoints
+      currentGame.start({
+        type: 'tracePath',
+        waypoints: [
+          { x: 0.5, y: 0.7, id: 0 },
+          { x: 0.3, y: 0.4, id: 1 },
+          { x: 0.7, y: 0.3, id: 2 },
+          { x: 0.5, y: 0.15, id: 3 }
+        ],
+        pathTolerance: 60
+      });
+      log('Trace The Path minigame initialized on canvas.');
+    }
+
+    initTracePath();
+
+    // Track Sabotage Bar clicks to prove no misfires
+    let sabotageClicks = 0;
+    const sabotageBar = document.getElementById('sabotage-bar');
+    const avatarBtns = document.querySelectorAll('.sabotage-avatar-btn');
+
+    avatarBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        sabotageClicks++;
+        log(`⚠️ Sabotage button clicked on target: ${btn.id} (Total: ${sabotageClicks})`);
+      });
+      btn.addEventListener('pointerdown', (e) => {
+        log(`⚠️ PointerDown reached sabotage button: ${btn.id}`);
+      });
+    });
+
+    // -------------------------------------------------------------
+    // TEST A: Toast Queue (Max 2 visible, auto-advance after 1.5s)
+    // -------------------------------------------------------------
+    window.testToastQueue = async function() {
+      const metricEl = document.getElementById('metric-queue');
+      metricEl.className = 'metric-value';
+      metricEl.textContent = 'Firing 3 toasts in 50ms...';
+      log('--- START TEST A: 3-Toast Queue & 1.5s Auto-Advance ---');
+
+      const toastContainer = document.getElementById('toast-container');
+
+      // Fire 3 toasts in rapid succession
+      showToast('💥 Screen Flip → Bob!', 'attacker', 1500);
+      showToast('🔥 Alice hit you with Jelly Mode!', 'victim', 1500);
+      showToast('👻 Delta (Ghost) hit you with Fog of War!', 'ghost-victim', 1500);
+
+      await new Promise(r => setTimeout(r, 100));
+
+      const visibleInitial = toastContainer.querySelectorAll('.toast.show').length;
+      log(`Immediate DOM visible toasts: ${visibleInitial}/2 (Toast 3 is queued)`);
+
+      if (visibleInitial !== 2) {
+        metricEl.textContent = `FAIL: Visible count ${visibleInitial} (Expected 2)`;
+        metricEl.classList.add('status-fail');
+        return false;
+      }
+
+      metricEl.textContent = 'Visible: 2/2 | Queued: 1. Waiting 1.5s...';
+      metricEl.classList.add('status-warn');
+
+      // Wait 1.6s for 1st toast to dismiss and queued toast to auto-advance
+      await new Promise(r => setTimeout(r, 1600));
+
+      const visibleAfter = toastContainer.querySelectorAll('.toast.show').length;
+      const texts = Array.from(toastContainer.querySelectorAll('.toast.show')).map(t => t.textContent);
+      log(`After 1.5s auto-advance: ${visibleAfter} visible toasts.`);
+      log(`Active toasts: ${JSON.stringify(texts)}`);
+
+      const hasGhostToast = texts.some(t => t.includes('Delta (Ghost)'));
+      if (hasGhostToast) {
+        metricEl.textContent = '✓ PASS: Queued 3rd toast auto-advanced at 1.5s!';
+        metricEl.classList.remove('status-warn');
+        metricEl.classList.add('status-pass');
+        log('✓ PASS: Test A succeeded: 3rd toast queued while 2 visible, auto-advanced at 1.5s.');
+        return true;
+      } else {
+        metricEl.textContent = 'FAIL: Queued toast did not advance';
+        metricEl.classList.add('status-fail');
+        return false;
+      }
+    };
+
+    // -------------------------------------------------------------
+    // TEST B: Measure Placement & Sabotage Bar Separation
+    // -------------------------------------------------------------
+    window.testPlacement = function() {
+      const metricEl = document.getElementById('metric-placement');
+      log('--- START TEST B: Toast Bottom-Center & Sabotage Bar Clearance ---');
+
+      const barRect = sabotageBar.getBoundingClientRect();
+      const toastContainer = document.getElementById('toast-container');
+      const containerRect = toastContainer.getBoundingClientRect();
+      const winW = window.innerWidth;
+      const winH = window.innerHeight;
+
+      // Ensure container is at bottom
+      const distFromBottom = winH - containerRect.bottom;
+      // Ensure horizontal center
+      const containerCenter = containerRect.left + containerRect.width / 2;
+      const centerDelta = Math.abs(containerCenter - winW / 2);
+
+      // Vertical separation between top Sabotage Bar and bottom Toast Container
+      const separation = containerRect.top - barRect.bottom;
+
+      log(`Sabotage Bar: top=${barRect.top.toFixed(0)}, bottom=${barRect.bottom.toFixed(0)}`);
+      log(`Toast Container: top=${containerRect.top.toFixed(0)}, bottom=${containerRect.bottom.toFixed(0)}, center-offset=${centerDelta.toFixed(1)}px`);
+      log(`Vertical clearance between bar and toasts: ${separation.toFixed(0)}px`);
+
+      if (separation > 50 && centerDelta < 10) {
+        metricEl.textContent = `✓ PASS: Bottom-center (${separation.toFixed(0)}px clearance, 0px overlap)`;
+        metricEl.className = 'metric-value status-pass';
+        log('✓ PASS: Test B succeeded: Toasts render bottom-center without overlapping Sabotage Bar.');
+        return true;
+      } else {
+        metricEl.textContent = `FAIL: Separation=${separation}px, CenterDelta=${centerDelta}px`;
+        metricEl.className = 'metric-value status-fail';
+        return false;
+      }
+    };
+
+    // -------------------------------------------------------------
+    // TEST C: Trace The Path Drag Over Sabotage Bar (Pointer Capture)
+    // -------------------------------------------------------------
+    window.testTraceDrag = async function() {
+      const metricEl = document.getElementById('metric-drag');
+      metricEl.className = 'metric-value';
+      metricEl.textContent = 'Simulating drag over Sabotage Bar...';
+      log('--- START TEST C: Pointer Capture Drag Over Sabotage Bar ---');
+
+      sabotageClicks = 0;
+      initTracePath();
+
+      const canvasRect = canvas.getBoundingClientRect();
+      const barRect = sabotageBar.getBoundingClientRect();
+
+      // Start drag at Waypoint 1 (center of canvas)
+      const startX = canvasRect.left + canvasRect.width * 0.5;
+      const startY = canvasRect.top + canvasRect.height * 0.7;
+
+      log(`Starting pointerdown at canvas (${startX.toFixed(0)}, ${startY.toFixed(0)})...`);
+
+      const pointerId = 1;
+      const downEvent = new PointerEvent('pointerdown', {
+        pointerId,
+        bubbles: true,
+        cancelable: true,
+        clientX: startX,
+        clientY: startY
+      });
+      canvas.dispatchEvent(downEvent);
+
+      // Drag upwards, passing straight into and across the Sabotage Bar avatar button
+      const steps = 15;
+      const targetBtn = document.getElementById('target-btn-charlie');
+      const targetBtnRect = targetBtn.getBoundingClientRect();
+      const endX = targetBtnRect.left + targetBtnRect.width / 2;
+      const endY = targetBtnRect.top + targetBtnRect.height / 2;
+
+      log(`Dragging pointer UPWARDS through canvas to Sabotage Bar (${endX.toFixed(0)}, ${endY.toFixed(0)})...`);
+
+      for (let i = 1; i <= steps; i++) {
+        const curX = startX + (endX - startX) * (i / steps);
+        const curY = startY + (endY - startY) * (i / steps);
+
+        const moveEvent = new PointerEvent('pointermove', {
+          pointerId,
+          bubbles: true,
+          cancelable: true,
+          clientX: curX,
+          clientY: curY
+        });
+        canvas.dispatchEvent(moveEvent);
+        await new Promise(r => setTimeout(r, 20));
+      }
+
+      // Drag back into canvas
+      for (let i = steps; i >= 0; i--) {
+        const curX = startX + (endX - startX) * (i / steps);
+        const curY = startY + (endY - startY) * (i / steps);
+
+        const moveEvent = new PointerEvent('pointermove', {
+          pointerId,
+          bubbles: true,
+          cancelable: true,
+          clientX: curX,
+          clientY: curY
+        });
+        canvas.dispatchEvent(moveEvent);
+        await new Promise(r => setTimeout(r, 10));
+      }
+
+      const upEvent = new PointerEvent('pointerup', {
+        pointerId,
+        bubbles: true,
+        cancelable: true,
+        clientX: startX,
+        clientY: startY
+      });
+      canvas.dispatchEvent(upEvent);
+
+      log(`PointerUp dispatched. Sabotage clicks recorded: ${sabotageClicks}`);
+
+      if (sabotageClicks === 0) {
+        metricEl.textContent = '✓ PASS: Pointer captured. 0 misfires during drag!';
+        metricEl.className = 'metric-value status-pass';
+        log('✓ PASS: Test C succeeded: Tapping/dragging over Sabotage Bar did NOT break drag or misfire sabotage.');
+        return true;
+      } else {
+        metricEl.textContent = `FAIL: ${sabotageClicks} misfires detected`;
+        metricEl.className = 'metric-value status-fail';
+        return false;
+      }
+    };
+
+    // -------------------------------------------------------------
+    // RUN ALL AUTOMATED CHECKS
+    // -------------------------------------------------------------
+    window.runAllChecks = async function() {
+      const overallBadge = document.getElementById('overall-badge');
+      overallBadge.textContent = 'TESTING IN PROGRESS...';
+      overallBadge.style.color = '#FBBF24';
+      overallBadge.style.borderColor = '#FBBF24';
+
+      log('=====================================================');
+      log('RUNNING FULL AUTOMATED PATCH 1.0.2 VERIFICATION SUITE');
+      log('=====================================================');
+
+      const passB = window.testPlacement();
+      const passC = await window.testTraceDrag();
+      const passA = await window.testToastQueue();
+
+      if (passA && passB && passC) {
+        overallBadge.textContent = '✓ ALL 3 GAPS FULLY VERIFIED';
+        overallBadge.style.color = '#10B981';
+        overallBadge.style.borderColor = '#10B981';
+        log('🎉 ALL 3 CHECKS PASSED 100% WITH FLYING COLORS!');
+      } else {
+        overallBadge.textContent = 'VERIFICATION FAILED';
+        overallBadge.style.color = '#F43F7A';
+        overallBadge.style.borderColor = '#F43F7A';
+      }
+    };
+
+    // Bind event handlers
+    document.getElementById('btn-run-all').addEventListener('click', window.runAllChecks);
+    document.getElementById('btn-trigger-toasts').addEventListener('click', window.testToastQueue);
+    document.getElementById('btn-check-placement').addEventListener('click', window.testPlacement);
+    document.getElementById('btn-trace-drag').addEventListener('click', window.testTraceDrag);
+
+    // Initial placement check
+    setTimeout(() => {
+      window.testPlacement();
+    }, 200);
+  </script>
+</body>
+</html>

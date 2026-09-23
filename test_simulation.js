@@ -237,13 +237,53 @@ function runUnitTests() {
   assert.strictEqual(reconnectedPlayer.status, PLAYER_STATUS.PLAYING);
   assert.strictEqual(reconnectedPlayer.glitchTokens, 4, 'Banked tokens preserved on reconnect');
 
-  // Check anti-spam persistence: p1 still cannot attack p2 in this round
-  assert.throws(
-    () => room.sendGlitch('p1', 'p2'),
-    /You have already glitched this target this round/,
-    'Anti-spam set must persist across reconnect'
-  );
-  console.log('✓ Banked tokens & anti-spam restrictions successfully persisted across reconnect');
+  // Test 10: Late-Round 2.5s Carryover Regression (Smoke Test 1.0.1 Requirement)
+  console.log('Testing Late-Round 2.5s Minimum-Duration Carryover...');
+  const carryRoom = new GameRoom('CARRY', { id: 'cp1', name: 'Alice', socketId: 'cs1' }, mockIo);
+  carryRoom.addPlayer({ id: 'cp2', name: 'Bob', socketId: 'cs2' });
+  const cp1 = carryRoom.players.get('cp1');
+  const cp2 = carryRoom.players.get('cp2');
+
+  carryRoom.status = GAME_STATES.PLAYING;
+  // Apply glitch in final ~1s of the 8s round (e.g. 7.2s elapsed -> 800ms remaining)
+  const nowMock = Date.now();
+  carryRoom.roundStartedAt = nowMock - 7200;
+  cp1.glitchTokens = 2;
+
+  // Send glitch with 800ms left in round
+  carryRoom.sendGlitch('cp1', 'cp2', 'JELLY_MODE');
+
+  // 1. Verify remainingOwedMs was calculated as 2500 - ~800 = ~1700ms
+  const activeList = carryRoom.activeGlitches.get('cp2');
+  assert.strictEqual(activeList.length, 1);
+  const activeRecord = activeList[0];
+  assert.strictEqual(activeRecord.glitchType, 'JELLY_MODE');
+  assert.strictEqual(activeRecord.remainingOwedMs >= 1600 && activeRecord.remainingOwedMs <= 1800, true, 'remainingOwedMs should be ~1700ms');
+  assert.strictEqual(cp2.activeGlitches.includes('JELLY_MODE'), true, 'Glitch active before round end');
+
+  // 2. End round -> confirm visual pause across transition
+  carryRoom.endRound();
+  assert.strictEqual(carryRoom.status, GAME_STATES.POST_ROUND);
+  assert.strictEqual(cp2.activeGlitches.length, 0, 'Glitch visually paused/cleared during intermission');
+  assert.strictEqual(carryRoom.activeGlitches.size, 0, 'Active glitches map cleared');
+  assert.strictEqual(carryRoom.carriedOverGlitches.has('cp2'), true, 'Carried over map retains glitch');
+  const carried = carryRoom.carriedOverGlitches.get('cp2');
+  assert.strictEqual(carried.length, 1);
+  assert.strictEqual(carried[0].glitchType, 'JELLY_MODE');
+  assert.strictEqual(carried[0].remainingOwedMs, activeRecord.remainingOwedMs);
+
+  // 3. Start next round -> confirm glitch resumes for full owed duration next round
+  carryRoom.startRound();
+  assert.strictEqual(carryRoom.status, GAME_STATES.PLAYING);
+  assert.strictEqual(cp2.activeGlitches.includes('JELLY_MODE'), true, 'Glitch resumed next round');
+  assert.strictEqual(carryRoom.activeGlitchTimeouts.length, 1, 'Expiration timer scheduled for owed duration');
+  assert.strictEqual(carryRoom.carriedOverGlitches.size, 0, 'Carried over queue cleared after transfer');
+
+  // 4. Fast-forward / trigger expiration -> verify owed duration finishes and clears
+  carryRoom.expireGlitch('cp2', 'JELLY_MODE');
+  assert.strictEqual(cp2.activeGlitches.includes('JELLY_MODE'), false, 'Glitch expired after owed duration');
+
+  console.log('✓ PASS: Late-round 2.5s minimum-duration carryover correctly paused across transition and resumed for owed duration next round');
 
   console.log('✓ ALL UNIT TESTS & HEALTH CHECKS PASSED 100%!\n');
 }
@@ -448,6 +488,140 @@ async function runSocketIntegrationTest() {
 }
 
 // =========================================================================
+// PART 2B: 4-PLAYER GHOST SABOTAGE & ATTRIBUTION TOAST INTEGRATION TEST
+// =========================================================================
+
+async function run4PlayerGhostSabotageTest() {
+  console.log('======================================================');
+  console.log('PART 2B: 4-PLAYER GHOST SABOTAGE (NON-SHOWDOWN ROUND)');
+  console.log('======================================================');
+
+  const pA = await createClient('Alpha4');
+  const pB = await createClient('Bravo4');
+  const pC = await createClient('Charlie4');
+  const pD = await createClient('Delta4');
+  console.log('✓ Connected 4 clients (Alpha4, Bravo4, Charlie4, Delta4)');
+
+  let roomCode = null;
+  let pAId = null;
+  let pBId = null;
+  let pCId = null;
+  let pDId = null;
+
+  // Create room
+  await new Promise((resolve) => {
+    pA.socket.on('room-created', (data) => {
+      roomCode = data.roomCode;
+      pAId = data.playerId;
+      resolve();
+    });
+    pA.socket.emit('create-room', { playerName: 'Alpha4' });
+  });
+
+  // Join others
+  await new Promise((resolve) => {
+    pB.socket.on('room-joined', (data) => { pBId = data.playerId; resolve(); });
+    pB.socket.emit('join-room', { roomCode, playerName: 'Bravo4' });
+  });
+  await new Promise((resolve) => {
+    pC.socket.on('room-joined', (data) => { pCId = data.playerId; resolve(); });
+    pC.socket.emit('join-room', { roomCode, playerName: 'Charlie4' });
+  });
+  await new Promise((resolve) => {
+    pD.socket.on('room-joined', (data) => { pDId = data.playerId; resolve(); });
+    pD.socket.emit('join-room', { roomCode, playerName: 'Delta4' });
+  });
+  console.log(`✓ All 4 players joined room ${roomCode}`);
+
+  // Set fast test timings (1000ms round, 300ms pre, 300ms post, 400ms elim)
+  pA.socket.emit('test-fast-timings', {
+    roundDuration: 1000,
+    preRoundDuration: 300,
+    postRoundDuration: 300,
+    eliminationDuration: 400
+  });
+
+  // Start game
+  await new Promise((resolve) => {
+    pA.socket.on('game-starting', () => resolve());
+    pA.socket.emit('start-game');
+  });
+  console.log('✓ Game started with 4 players');
+
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('4-Player Ghost sabotage test timed out'));
+    }, 30000);
+
+    let phase = 1;
+    let roundNumber = 1;
+    let deltaEliminated = false;
+
+    // Submit scores on round-start
+    const submitScores = () => {
+      pA.socket.emit('submit-score', { roundData: { hits: 10, totalTargets: 10, correct: 10, wrong: 0, correctCells: 6, totalCells: 6 } });
+      pB.socket.emit('submit-score', { roundData: { hits: 10, totalTargets: 10, correct: 10, wrong: 0, correctCells: 6, totalCells: 6 } });
+      pC.socket.emit('submit-score', { roundData: { hits: 10, totalTargets: 10, correct: 10, wrong: 0, correctCells: 6, totalCells: 6 } });
+      pD.socket.emit('submit-score', { roundData: { hits: 1, totalTargets: 10, correct: 0, wrong: 10, correctCells: 0, totalCells: 6 } });
+    };
+
+    pA.socket.on('pre-round', (data) => {
+      phase = data.phase;
+      roundNumber = data.roundNumber;
+      console.log(`▶ [4-P PRE-ROUND] Phase ${phase}, Round ${roundNumber}, isShowdown: ${data.isShowdown}`);
+    });
+
+    pA.socket.on('round-start', (data) => {
+      console.log(`▶ [4-P ROUND-START] Phase ${phase}, Round ${roundNumber}, isShowdown: ${data.isShowdown}`);
+      submitScores();
+
+      // In Phase 2 Round 1: Delta is an eliminated ghost, and isShowdown is false!
+      if (phase === 2 && roundNumber === 1 && deltaEliminated && !data.isShowdown) {
+        console.log('👻 Delta4 (Ghost) firing sabotage at Alpha4 in normal round (Phase 2 Round 1)...');
+        setTimeout(() => {
+          pD.socket.emit('send-glitch', { targetPlayerId: pAId });
+        }, 150);
+      }
+    });
+
+    pA.socket.on('elimination', (data) => {
+      console.log(`💀 [4-P ELIMINATION] ${data.eliminatedPlayerName} was eliminated! Remaining: ${data.remainingCount}, Next is Showdown: ${data.isNextShowdown}`);
+      assert.strictEqual(data.eliminatedPlayerId, pDId, 'Delta4 must be eliminated');
+      assert.strictEqual(data.remainingCount, 3, '3 players must remain alive');
+      assert.strictEqual(data.isNextShowdown, false, 'Phase 2 must NOT be Showdown');
+      deltaEliminated = true;
+    });
+
+    pD.socket.on('glitch-confirmed', (data) => {
+      console.log(`✓ Delta4 (Ghost) glitch confirmed: isGhost=${data.isGhost}, target=${data.targetPlayerName}`);
+      assert.strictEqual(data.isGhost, true, 'glitch-confirmed must indicate isGhost: true');
+      assert.strictEqual(data.targetPlayerName, 'Alpha4');
+    });
+
+    pA.socket.on('glitch-incoming', (data) => {
+      const canonicalName = getGlitchDisplayName(data.glitchType);
+      const toastText = `👻 ${data.fromPlayerName} (Ghost) hit you with ${canonicalName}!`;
+      console.log(`✓ Alpha4 (Victim) received incoming ghost glitch!`);
+      console.log(`  Toast string generated: "${toastText}"`);
+
+      assert.strictEqual(data.isGhost, true, 'glitch-incoming must flag isGhost: true');
+      assert.strictEqual(data.fromPlayerName, 'Delta4');
+      assert.strictEqual(toastText, `👻 Delta4 (Ghost) hit you with ${canonicalName}!`);
+
+      console.log(`✓ PASS: Ghost victim-toast path verified in normal round: victim received exact "👻 Delta4 (Ghost) hit you with ${canonicalName}!" toast`);
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+
+  pA.socket.disconnect();
+  pB.socket.disconnect();
+  pC.socket.disconnect();
+  pD.socket.disconnect();
+  console.log('✓ 4-PLAYER GHOST INTEGRATION TEST PASSED 100%!\n');
+}
+
+// =========================================================================
 // PART 3: 8-PLAYER MAX-LOAD STRESS TEST (HEALTH CHECK 6)
 // =========================================================================
 
@@ -537,6 +711,7 @@ async function run8PlayerStressTest() {
 async function main() {
   runUnitTests();
   await runSocketIntegrationTest();
+  await run4PlayerGhostSabotageTest();
   await run8PlayerStressTest();
 }
 

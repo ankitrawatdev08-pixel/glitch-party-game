@@ -154,6 +154,22 @@ io.on('connection', (socket) => {
     } catch (_) {}
   });
 
+  // TEST HELPER: FAST TIMINGS (For rapid integration tests)
+  socket.on('test-fast-timings', (timings) => {
+    try {
+      const binding = roomManager.socketToRoom.get(socket.id);
+      if (binding) {
+        const room = roomManager.getRoom(binding.roomCode);
+        if (room && timings) {
+          if (timings.roundDuration !== undefined) room.settings.roundDuration = timings.roundDuration;
+          if (timings.preRoundDuration !== undefined) room.settings.preRoundDuration = timings.preRoundDuration;
+          if (timings.postRoundDuration !== undefined) room.settings.postRoundDuration = timings.postRoundDuration;
+          if (timings.eliminationDuration !== undefined) room.settings.eliminationDuration = timings.eliminationDuration;
+        }
+      }
+    } catch (_) {}
+  });
+
   // PLAY AGAIN
   socket.on('play-again', () => {
     try {
