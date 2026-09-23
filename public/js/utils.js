@@ -77,22 +77,42 @@ export async function copyToClipboard(text, tooltipEl) {
   }
 }
 
-// Toast notification helper
-export function showToast(message, type = 'info', duration = 3000) {
-  let toastContainer = $('#toast-container');
-  if (!toastContainer) {
-    toastContainer = document.createElement('div');
-    toastContainer.id = 'toast-container';
-    toastContainer.className = 'toast-container';
-    document.body.appendChild(toastContainer);
+// Toast notification helper with queue (max 2 visible, 1.5s auto-dismiss, non-blocking)
+const MAX_VISIBLE_TOASTS = 2;
+const DEFAULT_TOAST_DURATION = 1500;
+const toastQueue = [];
+let activeToastCount = 0;
+
+function getToastContainer() {
+  let container = $('#toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
   }
+  return container;
+}
+
+function processNextToast() {
+  if (activeToastCount >= MAX_VISIBLE_TOASTS || toastQueue.length === 0) {
+    return;
+  }
+
+  const { message, type, duration } = toastQueue.shift();
+  displayToast(message, type, duration);
+}
+
+function displayToast(message, type, duration) {
+  activeToastCount++;
+  const container = getToastContainer();
 
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.innerHTML = `<span>${message}</span>`;
-  toastContainer.appendChild(toast);
+  container.appendChild(toast);
 
-  // Trigger appear
+  // Trigger appear transition
   requestAnimationFrame(() => {
     toast.classList.add('show');
   });
@@ -103,6 +123,17 @@ export function showToast(message, type = 'info', duration = 3000) {
       if (toast.parentNode) {
         toast.parentNode.removeChild(toast);
       }
-    }, 300);
+      activeToastCount--;
+      processNextToast();
+    }, 200);
   }, duration);
 }
+
+export function showToast(message, type = 'info', duration = DEFAULT_TOAST_DURATION) {
+  if (activeToastCount < MAX_VISIBLE_TOASTS) {
+    displayToast(message, type, duration);
+  } else {
+    toastQueue.push({ message, type, duration });
+  }
+}
+

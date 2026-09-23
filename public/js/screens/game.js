@@ -1,7 +1,8 @@
 // public/js/screens/game.js
 import { sound } from '../audio.js';
 import { generateAvatarSvg } from '../avatar.js';
-import { GLITCH_METADATA, glitchManager } from '../glitch.js';
+import { GLITCH_METADATA, GLITCH_NAMES, getGlitchDisplayName, glitchManager } from '../glitch.js';
+import { showToast } from '../utils.js';
 
 // Minigame instances map
 import { TargetTapGame } from '../minigames/targetTap.js';
@@ -26,6 +27,8 @@ export class GameScreenManager {
 
     // Mid-round sabotage state
     this.glitchedTargetsThisRound = new Set();
+    this.pendingAttackTargets = new Set();
+    this.opponentsMap = new Map();
     this.activeGlitchesMap = {};
     this.myTokens = 0;
     this.isGhost = false;
@@ -109,6 +112,8 @@ export class GameScreenManager {
     const isShowdown = !!data.isShowdown;
     this.isShowdown = isShowdown;
     this.activeGlitchesMap = data.activeGlitches || {};
+    this.pendingAttackTargets.clear();
+    this.opponentsMap.clear();
 
     // Get current players state
     const players = data.players || [];
@@ -124,6 +129,7 @@ export class GameScreenManager {
 
     // Filter alive opponents (cannot glitch yourself or eliminated players)
     const opponents = players.filter(p => p.id !== this.myPlayerId && p.status !== 'ELIMINATED');
+    opponents.forEach(opp => this.opponentsMap.set(opp.id, opp));
 
     const canSabotage = !this.isGhost
       ? (this.myTokens >= 1)
@@ -192,8 +198,6 @@ export class GameScreenManager {
           <div id="game-freeze-overlay" class="game-freeze-overlay hidden">
             <span class="freeze-text">TIME!</span>
           </div>
-          <!-- Mid-round incoming glitch alert overlay -->
-          <div id="incoming-glitch-banner" class="incoming-glitch-banner hidden"></div>
         </div>
       </div>
     `;
@@ -279,7 +283,8 @@ export class GameScreenManager {
         const targetId = btn.getAttribute('data-target-id');
         if (!targetId || btn.disabled) return;
 
-        // Optimistically record anti-spam and disable button
+        // Optimistically record pending attack and mark target disabled
+        this.pendingAttackTargets.add(targetId);
         this.glitchedTargetsThisRound.add(targetId);
         btn.disabled = true;
         btn.classList.add('sabotage-target-disabled');
@@ -288,6 +293,8 @@ export class GameScreenManager {
         if (this.isGhost) {
           sound.playGhostGlitch();
           this.hasGhostGlitch = false;
+        } else {
+          this.myTokens = Math.max(0, this.myTokens - 1);
         }
 
         // Trigger socket emit (1-tap: server picks randomized eligible effect)
@@ -360,7 +367,8 @@ export class GameScreenManager {
     this.updateSabotageBarState();
   }
 
-  notifyGlitchConfirmed(targetPlayerId, glitchType, remainingTokens, isGhost) {
+  notifyGlitchConfirmed(targetPlayerId, targetPlayerName, glitchType, remainingTokens, isGhost) {
+    this.pendingAttackTargets.delete(targetPlayerId);
     if (remainingTokens !== undefined) {
       this.myTokens = remainingTokens;
     }
@@ -369,21 +377,40 @@ export class GameScreenManager {
     }
     this.glitchedTargetsThisRound.add(targetPlayerId);
 
-    const feedbackEl = this.container.querySelector('#sabotage-bar-feedback');
-    const meta = GLITCH_METADATA[glitchType] || { name: glitchType, icon: '⚡' };
-
-    if (feedbackEl) {
-      feedbackEl.textContent = `⚡ Sent ${meta.name}!`;
-      feedbackEl.className = 'sabotage-bar-feedback text-success';
-      setTimeout(() => {
-        if (feedbackEl) feedbackEl.textContent = '';
-      }, 2000);
-    }
+    // Attribution Toast for Attacker
+    // Format: 💥 [Effect Name] → [Victim Name]!
+    const effectName = getGlitchDisplayName(glitchType);
+    const victimName = targetPlayerName || (this.opponentsMap.get(targetPlayerId)?.name) || 'Opponent';
+    showToast(`💥 ${effectName} → ${victimName}!`, 'attacker', 1500);
 
     this.updateSabotageBarState();
   }
 
-  handleGlitchError(errorMessage) {
+  handleGlitchError(errorMessage, targetPlayerId) {
+    // Rejection handling (Points 1 & 2): restore token balance and un-grey button
+    if (targetPlayerId) {
+      if (this.pendingAttackTargets.has(targetPlayerId)) {
+        this.pendingAttackTargets.delete(targetPlayerId);
+        this.glitchedTargetsThisRound.delete(targetPlayerId);
+        if (this.isGhost) {
+          this.hasGhostGlitch = true;
+        } else {
+          this.myTokens = Math.min(5, this.myTokens + 1);
+        }
+      }
+    } else {
+      // Revert all pending if targetPlayerId wasn't specific
+      for (const tId of this.pendingAttackTargets) {
+        this.glitchedTargetsThisRound.delete(tId);
+        if (this.isGhost) {
+          this.hasGhostGlitch = true;
+        } else {
+          this.myTokens = Math.min(5, this.myTokens + 1);
+        }
+      }
+      this.pendingAttackTargets.clear();
+    }
+
     const feedbackEl = this.container.querySelector('#sabotage-bar-feedback');
     if (feedbackEl) {
       feedbackEl.textContent = errorMessage;
@@ -395,23 +422,21 @@ export class GameScreenManager {
     this.updateSabotageBarState();
   }
 
-  notifyGlitchIncoming(glitchType, fromPlayerName) {
+  notifyGlitchIncoming(glitchType, fromPlayerName, remainingOwedMs, isGhost) {
     sound.playGlitchHit();
-    const meta = GLITCH_METADATA[glitchType] || { name: glitchType, icon: '⚡' };
 
     // Dynamically apply glitch effect immediately to active screen
     const canvasContainer = this.container.querySelector('#game-canvas-container');
     glitchManager.addGlitch(glitchType, canvasContainer);
 
-    // Show mid-round non-blocking incoming banner
-    const banner = this.container.querySelector('#incoming-glitch-banner');
-    if (banner) {
-      banner.innerHTML = `<span>⚠️ <strong>${fromPlayerName}</strong> glitched you with <strong>${meta.icon} ${meta.name}</strong>!</span>`;
-      banner.classList.remove('hidden');
-      clearTimeout(this.bannerTimeout);
-      this.bannerTimeout = setTimeout(() => {
-        if (banner) banner.classList.add('hidden');
-      }, 2500);
+    // Attribution Toast for Victim
+    // Format: 🔥 [Attacker Name] hit you with [Effect Name]!
+    // Or: 👻 [Attacker Name] (Ghost) hit you with [Effect Name]!
+    const effectName = getGlitchDisplayName(glitchType);
+    if (isGhost) {
+      showToast(`👻 ${fromPlayerName} (Ghost) hit you with ${effectName}!`, 'ghost-victim', 1500);
+    } else {
+      showToast(`🔥 ${fromPlayerName} hit you with ${effectName}!`, 'victim', 1500);
     }
   }
 

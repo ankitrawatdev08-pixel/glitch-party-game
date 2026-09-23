@@ -355,6 +355,19 @@ class GameRoom {
           this.ghostGlitchUsed.add(player.id);
         }
       }
+
+      // Purge any carried-over glitches originated by an eliminated ghost (Health Check 3)
+      for (const [playerId, list] of this.carriedOverGlitches.entries()) {
+        const nonGhostList = list.filter(item => {
+          const sender = this.players.get(item.fromPlayerId);
+          return sender && sender.status !== PLAYER_STATUS.ELIMINATED;
+        });
+        if (nonGhostList.length > 0) {
+          this.carriedOverGlitches.set(playerId, nonGhostList);
+        } else {
+          this.carriedOverGlitches.delete(playerId);
+        }
+      }
     }
 
     for (const t of this.activeGlitchTimeouts) {
@@ -520,6 +533,7 @@ class GameRoom {
     if (sender.socketId) {
       this.io.to(sender.socketId).emit('glitch-confirmed', {
         targetPlayerId,
+        targetPlayerName: target.name,
         glitchType: chosenGlitch,
         remainingTokens: sender.glitchTokens,
         isGhost
@@ -530,7 +544,8 @@ class GameRoom {
       this.io.to(target.socketId).emit('glitch-incoming', {
         glitchType: chosenGlitch,
         fromPlayerName: sender.name,
-        remainingOwedMs
+        remainingOwedMs,
+        isGhost
       });
     }
 

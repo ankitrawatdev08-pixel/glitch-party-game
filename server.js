@@ -134,8 +134,24 @@ io.on('connection', (socket) => {
 
       room.sendGlitch(binding.playerId, targetPlayerId, glitchType);
     } catch (err) {
-      socket.emit('error', { message: err.message });
+      socket.emit('error', { message: err.message, targetPlayerId, action: 'send-glitch' });
     }
+  });
+
+  // TEST HELPER: GRANT TOKENS (For automated stress test simulation)
+  socket.on('test-grant-tokens', ({ count }) => {
+    try {
+      const binding = roomManager.socketToRoom.get(socket.id);
+      if (binding) {
+        const room = roomManager.getRoom(binding.roomCode);
+        if (room) {
+          const player = room.players.get(binding.playerId);
+          if (player) {
+            player.glitchTokens = count || 2;
+          }
+        }
+      }
+    } catch (_) {}
   });
 
   // PLAY AGAIN

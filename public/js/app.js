@@ -209,12 +209,12 @@ class GlitchApp {
 
     // GLITCH INCOMING
     this.socket.on('glitch-incoming', (data) => {
-      this.gameScreen.notifyGlitchIncoming(data.glitchType, data.fromPlayerName);
+      this.gameScreen.notifyGlitchIncoming(data.glitchType, data.fromPlayerName, data.remainingOwedMs, data.isGhost);
     });
 
     // GLITCH CONFIRMED
     this.socket.on('glitch-confirmed', (data) => {
-      this.gameScreen.notifyGlitchConfirmed(data.targetPlayerId, data.glitchType, data.remainingTokens, data.isGhost);
+      this.gameScreen.notifyGlitchConfirmed(data.targetPlayerId, data.targetPlayerName, data.glitchType, data.remainingTokens, data.isGhost);
     });
 
     // ACTIVE GLITCHES UPDATED
@@ -294,7 +294,7 @@ class GlitchApp {
       } else {
         showToast(err.message, 'danger');
         if (this.gameScreen && typeof this.gameScreen.handleGlitchError === 'function') {
-          this.gameScreen.handleGlitchError(err.message);
+          this.gameScreen.handleGlitchError(err.message, err.targetPlayerId);
         }
       }
     });

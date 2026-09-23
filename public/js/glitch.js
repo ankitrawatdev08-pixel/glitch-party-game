@@ -34,6 +34,18 @@ export const GLITCH_METADATA = {
   }
 };
 
+export const GLITCH_NAMES = {
+  SCREEN_FLIP: 'Screen Flip',
+  JELLY_MODE: 'Jelly Mode',
+  FOG_OF_WAR: 'Fog of War',
+  INPUT_SWAP: 'Input Swap',
+  SPEED_DEMON: 'Speed Demon'
+};
+
+export function getGlitchDisplayName(glitchId) {
+  return GLITCH_NAMES[glitchId] || (GLITCH_METADATA[glitchId] && GLITCH_METADATA[glitchId].name) || glitchId;
+}
+
 class GlitchManager {
   constructor() {
     this.activeGlitches = new Set();

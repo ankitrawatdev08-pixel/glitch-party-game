@@ -139,6 +139,34 @@ export class TracePathGame extends BaseMiniGame {
     }
   }
 
+  pointerMove(x, y) {
+    if (this.state !== 'TRACING') return;
+
+    const baseRadius = Math.min(this.width, this.height) * 0.055;
+    const targetWp = this.waypoints[this.currentStep];
+    if (!targetWp) return;
+
+    const cx = targetWp.x * this.width;
+    const cy = targetWp.y * this.height;
+    const dist = Math.hypot(x - cx, y - cy);
+
+    // Hit test: smoothly advance if finger enters waypoint radius during drag
+    if (dist <= baseRadius * 1.5) {
+      this.tappedPoints.push(this.currentStep);
+      this.currentStep++;
+      sound.playScoreChime();
+
+      if (this.currentStep >= this.waypoints.length) {
+        this.state = 'FINISHED';
+      }
+
+      if (this.onScoreUpdate) {
+        const score = Math.round((this.currentStep / this.waypoints.length) * 100);
+        this.onScoreUpdate(score);
+      }
+    }
+  }
+
   getRawData() {
     return {
       correctWaypoints: this.currentStep,

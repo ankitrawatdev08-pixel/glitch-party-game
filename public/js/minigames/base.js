@@ -96,6 +96,12 @@ export class BaseMiniGame {
 
   onCanvasPointerDown(e) {
     if (!this.running) return;
+    try {
+      if (typeof this.canvas.setPointerCapture === 'function') {
+        this.canvas.setPointerCapture(e.pointerId);
+      }
+    } catch (_) {}
+
     const rect = this.canvas.getBoundingClientRect();
     let rawX = e.clientX - rect.left;
     let rawY = e.clientY - rect.top;
@@ -121,6 +127,12 @@ export class BaseMiniGame {
 
   onCanvasPointerUp(e) {
     if (!this.running) return;
+    try {
+      if (typeof this.canvas.releasePointerCapture === 'function' && this.canvas.hasPointerCapture(e.pointerId)) {
+        this.canvas.releasePointerCapture(e.pointerId);
+      }
+    } catch (_) {}
+
     const rect = this.canvas.getBoundingClientRect();
     let rawX = e.clientX - rect.left;
     let rawY = e.clientY - rect.top;
