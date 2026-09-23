@@ -214,7 +214,12 @@ class GlitchApp {
 
     // GLITCH CONFIRMED
     this.socket.on('glitch-confirmed', (data) => {
-      this.gameScreen.notifyGlitchConfirmed(data.targetPlayerId, data.glitchType, data.remainingTokens);
+      this.gameScreen.notifyGlitchConfirmed(data.targetPlayerId, data.glitchType, data.remainingTokens, data.isGhost);
+    });
+
+    // ACTIVE GLITCHES UPDATED
+    this.socket.on('active-glitches-updated', (data) => {
+      this.gameScreen.updateActiveGlitches(data.activeGlitches);
     });
 
     // ROUND START
@@ -288,6 +293,9 @@ class GlitchApp {
         this.landingScreen.showError(err.message);
       } else {
         showToast(err.message, 'danger');
+        if (this.gameScreen && typeof this.gameScreen.handleGlitchError === 'function') {
+          this.gameScreen.handleGlitchError(err.message);
+        }
       }
     });
 

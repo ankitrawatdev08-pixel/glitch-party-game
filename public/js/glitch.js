@@ -71,6 +71,33 @@ class GlitchManager {
     this.updateHudBadges();
   }
 
+  addGlitch(glitchId, containerEl = this.containerEl) {
+    if (!glitchId) return;
+    this.activeGlitches.add(glitchId);
+    this.containerEl = containerEl;
+    if (containerEl) {
+      if (glitchId === 'SCREEN_FLIP') containerEl.classList.add('glitch-screen-flip');
+      if (glitchId === 'JELLY_MODE') containerEl.classList.add('glitch-jelly-mode');
+      if (glitchId === 'FOG_OF_WAR') containerEl.classList.add('glitch-fog-active');
+      if (glitchId === 'INPUT_SWAP') containerEl.classList.add('glitch-input-swap');
+      if (glitchId === 'SPEED_DEMON') containerEl.classList.add('glitch-speed-demon');
+    }
+    this.updateHudBadges();
+  }
+
+  removeGlitch(glitchId, containerEl = this.containerEl) {
+    if (!glitchId) return;
+    this.activeGlitches.delete(glitchId);
+    if (containerEl) {
+      if (glitchId === 'SCREEN_FLIP') containerEl.classList.remove('glitch-screen-flip');
+      if (glitchId === 'JELLY_MODE') containerEl.classList.remove('glitch-jelly-mode');
+      if (glitchId === 'FOG_OF_WAR') containerEl.classList.remove('glitch-fog-active');
+      if (glitchId === 'INPUT_SWAP') containerEl.classList.remove('glitch-input-swap');
+      if (glitchId === 'SPEED_DEMON') containerEl.classList.remove('glitch-speed-demon');
+    }
+    this.updateHudBadges();
+  }
+
   clearGlitches(containerEl = this.containerEl) {
     this.activeGlitches.clear();
     if (containerEl) {

@@ -40,10 +40,14 @@ class GameRoom {
     this.roundStartedAt = 0;
 
     // Glitch tracking
-    // targetPlayerId -> Array of { glitchType, fromPlayerId, fromPlayerName }
-    this.pendingGlitches = new Map();
+    // targetPlayerId -> Array of { glitchType, fromPlayerId, fromPlayerName, remainingOwedMs, appliedAt }
     this.activeGlitches = new Map();
+    // targetPlayerId -> Array of { glitchType, fromPlayerId, fromPlayerName, remainingOwedMs }
+    this.carriedOverGlitches = new Map();
+    // attackerPlayerId -> Set<targetPlayerId> for anti-spam duplicate prevention per round
+    this.attackerGlitchedTargetsThisRound = new Map();
     this.ghostGlitchUsed = new Set(); // ghost playerIds who used their free glitch this round
+    this.activeGlitchTimeouts = []; // timeouts for expiring carried-over or mid-round glitches
 
     // Scoring & History
     this.phaseScores = new Map(); // playerId -> number
@@ -273,16 +277,48 @@ class GameRoom {
     return this.miniGameQueue.shift();
   }
 
+  isCurrentPhaseShowdown() {
+    return this.players.size > 2 && this.getAlivePlayers().length === 2;
+  }
+
+  getAllActiveGlitchesPublic() {
+    const res = {};
+    for (const p of this.players.values()) {
+      const active = this.activeGlitches.get(p.id) || [];
+      const carried = this.carriedOverGlitches.get(p.id) || [];
+      const types = Array.from(new Set([
+        ...active.map(g => g.glitchType),
+        ...carried.map(g => g.glitchType)
+      ]));
+      res[p.id] = types;
+    }
+    return res;
+  }
+
+  expireGlitch(playerId, glitchType) {
+    const list = this.activeGlitches.get(playerId);
+    if (!list) return;
+    const idx = list.findIndex(g => g.glitchType === glitchType);
+    if (idx !== -1) {
+      list.splice(idx, 1);
+      const player = this.players.get(playerId);
+      if (player) {
+        player.activeGlitches = list.map(g => g.glitchType);
+      }
+      this.io.to(this.code).emit('active-glitches-updated', {
+        activeGlitches: this.getAllActiveGlitchesPublic()
+      });
+    }
+  }
+
   startPreRound() {
     this.status = GAME_STATES.PRE_ROUND;
     this.globalRound++;
-    this.pendingGlitches.clear();
     this.ghostGlitchUsed.clear();
     this.submittedScores.clear();
 
     // Check if 2 players remain in 3+ player game -> Showdown!
-    const alivePlayers = this.getAlivePlayers();
-    const isShowdown = this.players.size > 2 && alivePlayers.length === 2;
+    const isShowdown = this.isCurrentPhaseShowdown();
 
     this.currentMiniGame = this.getNextMiniGame();
     this.miniGameConfig = MiniGameEngine.generateRoundConfig(this.currentMiniGame, this.globalRound);
@@ -310,9 +346,47 @@ class GameRoom {
   startRound() {
     this.status = GAME_STATES.PLAYING;
     this.roundStartedAt = Date.now();
+    this.attackerGlitchedTargetsThisRound.clear();
+    this.ghostGlitchUsed.clear();
 
-    // Transfer pending glitches to active
-    this.activeGlitches = new Map(this.pendingGlitches);
+    if (this.isCurrentPhaseShowdown()) {
+      for (const player of this.players.values()) {
+        if (player.status === PLAYER_STATUS.ELIMINATED) {
+          this.ghostGlitchUsed.add(player.id);
+        }
+      }
+    }
+
+    for (const t of this.activeGlitchTimeouts) {
+      clearTimeout(t);
+    }
+    this.activeGlitchTimeouts = [];
+
+    // Transfer carried-over glitches into active glitches and schedule their expiration
+    for (const [playerId, list] of this.carriedOverGlitches.entries()) {
+      let activeList = this.activeGlitches.get(playerId);
+      if (!activeList) {
+        activeList = [];
+        this.activeGlitches.set(playerId, activeList);
+      }
+      for (const item of list) {
+        if (item.remainingOwedMs > 0) {
+          activeList.push({
+            glitchType: item.glitchType,
+            fromPlayerId: item.fromPlayerId,
+            fromPlayerName: item.fromPlayerName,
+            remainingOwedMs: item.remainingOwedMs,
+            appliedAt: Date.now()
+          });
+
+          const t = setTimeout(() => {
+            this.expireGlitch(playerId, item.glitchType);
+          }, item.remainingOwedMs);
+          this.activeGlitchTimeouts.push(t);
+        }
+      }
+    }
+    this.carriedOverGlitches.clear();
 
     // Attach active glitches to each player's state
     for (const [playerId, player] of this.players.entries()) {
@@ -320,11 +394,13 @@ class GameRoom {
       player.activeGlitches = glitches.map(g => g.glitchType);
     }
 
+    const isShowdown = this.isCurrentPhaseShowdown();
+
     this.io.to(this.code).emit('round-start', {
       duration: this.settings.roundDuration,
-      activeGlitches: Object.fromEntries(
-        Array.from(this.activeGlitches.entries()).map(([pid, list]) => [pid, list.map(g => g.glitchType)])
-      )
+      isShowdown,
+      activeGlitches: this.getAllActiveGlitchesPublic(),
+      players: this.getPublicPlayersState()
     });
 
     this.stateTimer = setTimeout(() => {
@@ -337,9 +413,9 @@ class GameRoom {
     this.submittedScores.set(playerId, rawData);
   }
 
-  sendGlitch(fromPlayerId, targetPlayerId, glitchType) {
-    if (this.status !== GAME_STATES.PRE_ROUND) {
-      throw new Error('Glitches can only be sent during pre-round.');
+  sendGlitch(fromPlayerId, targetPlayerId, optionalGlitchType) {
+    if (this.status !== GAME_STATES.PLAYING) {
+      throw new Error('Glitches can only be activated during an active round.');
     }
     const sender = this.players.get(fromPlayerId);
     const target = this.players.get(targetPlayerId);
@@ -347,21 +423,22 @@ class GameRoom {
     if (!sender || !target) {
       throw new Error('Player not found.');
     }
+    if (target.status === PLAYER_STATUS.ELIMINATED) {
+      throw new Error('Cannot glitch an eliminated player.');
+    }
     if (fromPlayerId === targetPlayerId) {
       throw new Error('Cannot glitch yourself.');
     }
-    if (!GLITCH_TYPES[glitchType]) {
-      throw new Error('Invalid glitch type.');
-    }
 
-    // Ghost or Alive?
     const isGhost = sender.status === PLAYER_STATUS.ELIMINATED;
-    const isShowdown = this.players.size > 2 && this.getAlivePlayers().length === 2;
+    const isShowdown = this.isCurrentPhaseShowdown();
 
+    // 1. Showdown Check for Ghosts (Pure skill finale)
     if (isShowdown && isGhost) {
       throw new Error('Ghost glitches are disabled during Final Showdown.');
     }
 
+    // 2. Cost / Token availability
     if (isGhost) {
       if (this.ghostGlitchUsed.has(fromPlayerId)) {
         throw new Error('Ghosts can only send 1 glitch per round.');
@@ -372,48 +449,95 @@ class GameRoom {
       }
     }
 
-    // Target duplicate check
-    if (!this.pendingGlitches.has(targetPlayerId)) {
-      this.pendingGlitches.set(targetPlayerId, []);
+    // 3. Anti-Spam Check: One glitch per attacker per target per round (Server-enforced)
+    if (!this.attackerGlitchedTargetsThisRound.has(fromPlayerId)) {
+      this.attackerGlitchedTargetsThisRound.set(fromPlayerId, new Set());
     }
-    const targetList = this.pendingGlitches.get(targetPlayerId);
-
-    if (targetList.some(g => g.glitchType === glitchType)) {
-      throw new Error(`Target is already affected by ${GLITCH_TYPES[glitchType].name}.`);
-    }
-
-    if (targetList.length >= TOKEN_RULES.MAX_GLITCHES_PER_PLAYER) {
-      throw new Error('Target has reached the maximum 3 glitch limit for this round.');
+    const glitchedSet = this.attackerGlitchedTargetsThisRound.get(fromPlayerId);
+    if (glitchedSet.has(targetPlayerId)) {
+      throw new Error('You have already glitched this target this round.');
     }
 
-    // Deduct cost
+    // 4. Target Caps & Eligibility (active + carried-over)
+    if (!this.activeGlitches.has(targetPlayerId)) {
+      this.activeGlitches.set(targetPlayerId, []);
+    }
+    const currentActive = this.activeGlitches.get(targetPlayerId);
+    const activeTypes = new Set(currentActive.map(g => g.glitchType));
+
+    const carried = this.carriedOverGlitches.get(targetPlayerId) || [];
+    carried.forEach(c => activeTypes.add(c.glitchType));
+
+    if (activeTypes.size >= TOKEN_RULES.MAX_GLITCHES_PER_PLAYER) {
+      throw new Error('Target has reached the maximum 3 active glitch limit.');
+    }
+
+    const allTypes = Object.keys(GLITCH_TYPES);
+    const eligiblePool = allTypes.filter(type => !activeTypes.has(type));
+
+    if (eligiblePool.length === 0) {
+      throw new Error('All glitch effects are currently active on this target.');
+    }
+
+    // Select randomized effect strictly from eligible pool
+    let chosenGlitch;
+    if (optionalGlitchType && eligiblePool.includes(optionalGlitchType)) {
+      chosenGlitch = optionalGlitchType;
+    } else {
+      chosenGlitch = eligiblePool[Math.floor(Math.random() * eligiblePool.length)];
+    }
+
+    // 5. Deduct token
     if (isGhost) {
       this.ghostGlitchUsed.add(fromPlayerId);
     } else {
       sender.glitchTokens -= TOKEN_RULES.COST_PER_GLITCH;
     }
 
-    targetList.push({
-      glitchType,
+    // 6. Record Anti-Spam
+    glitchedSet.add(targetPlayerId);
+
+    // 7. Calculate Late-Round Minimum Duration (2.5s guarantee)
+    const now = Date.now();
+    const timeRemaining = Math.max(0, (this.roundStartedAt + this.settings.roundDuration) - now);
+    let remainingOwedMs = 0;
+    if (timeRemaining < 2500) {
+      remainingOwedMs = 2500 - timeRemaining;
+    }
+
+    const glitchRecord = {
+      glitchType: chosenGlitch,
       fromPlayerId,
-      fromPlayerName: sender.name
-    });
+      fromPlayerName: sender.name,
+      remainingOwedMs,
+      appliedAt: now
+    };
+
+    currentActive.push(glitchRecord);
+    target.activeGlitches = currentActive.map(g => g.glitchType);
 
     // Notify sender & target
     if (sender.socketId) {
       this.io.to(sender.socketId).emit('glitch-confirmed', {
         targetPlayerId,
-        glitchType,
-        remainingTokens: sender.glitchTokens
+        glitchType: chosenGlitch,
+        remainingTokens: sender.glitchTokens,
+        isGhost
       });
     }
 
     if (target.socketId) {
       this.io.to(target.socketId).emit('glitch-incoming', {
-        glitchType,
-        fromPlayerName: sender.name
+        glitchType: chosenGlitch,
+        fromPlayerName: sender.name,
+        remainingOwedMs
       });
     }
+
+    // Broadcast updated active glitches to all players in the room
+    this.io.to(this.code).emit('active-glitches-updated', {
+      activeGlitches: this.getAllActiveGlitchesPublic()
+    });
 
     return true;
   }
@@ -421,6 +545,36 @@ class GameRoom {
   endRound() {
     this.status = GAME_STATES.POST_ROUND;
     this.clearTimer();
+
+    for (const t of this.activeGlitchTimeouts) {
+      clearTimeout(t);
+    }
+    this.activeGlitchTimeouts = [];
+
+    // Check which active glitches have carryover owed (Section 6)
+    this.carriedOverGlitches.clear();
+    for (const [playerId, list] of this.activeGlitches.entries()) {
+      const carryList = [];
+      for (const item of list) {
+        if (item.remainingOwedMs > 0) {
+          carryList.push({
+            glitchType: item.glitchType,
+            fromPlayerId: item.fromPlayerId,
+            fromPlayerName: item.fromPlayerName,
+            remainingOwedMs: item.remainingOwedMs
+          });
+        }
+      }
+      if (carryList.length > 0) {
+        this.carriedOverGlitches.set(playerId, carryList);
+      }
+    }
+    this.activeGlitches.clear();
+
+    // Clear visual active glitches on players for post-round transition
+    for (const player of this.players.values()) {
+      player.activeGlitches = [];
+    }
 
     this.io.to(this.code).emit('round-end');
 
@@ -457,8 +611,6 @@ class GameRoom {
 
       const totalTokens = (this.totalTokensEarned.get(player.id) || 0) + tokensEarned;
       this.totalTokensEarned.set(player.id, totalTokens);
-
-      player.activeGlitches = [];
     }
 
     const standings = this.getStandings();
@@ -666,9 +818,12 @@ class GameRoom {
     this.currentRound = 1;
     this.globalRound = 0;
     this.eliminationOrder = [];
-    this.pendingGlitches.clear();
+    this.carriedOverGlitches.clear();
     this.activeGlitches.clear();
     this.ghostGlitchUsed.clear();
+    this.attackerGlitchedTargetsThisRound.clear();
+    for (const t of this.activeGlitchTimeouts) clearTimeout(t);
+    this.activeGlitchTimeouts = [];
 
     // Reset players
     for (const player of this.players.values()) {

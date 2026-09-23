@@ -22,33 +22,34 @@ export class GameScreenManager {
     this.preRoundTimer = null;
     this.roundTimer = null;
     this.postRoundTimer = null;
+    this.bannerTimeout = null;
 
-    // Pre-round targeting state
-    this.selectedTargetId = null;
-    this.selectedGlitchType = null;
-    this.incomingGlitches = [];
+    // Mid-round sabotage state
+    this.glitchedTargetsThisRound = new Set();
+    this.activeGlitchesMap = {};
+    this.myTokens = 0;
+    this.isGhost = false;
+    this.hasGhostGlitch = false;
+    this.isShowdown = false;
   }
 
   setPlayerId(id) {
     this.myPlayerId = id;
   }
 
-  // --- 1. PRE-ROUND SCREEN ---
+  // --- 1. PRE-ROUND SCREEN (Preview & Countdown Only) ---
 
   showPreRound(data) {
     this.cleanupCurrentGame();
-    this.incomingGlitches = [];
-    this.selectedTargetId = null;
-    this.selectedGlitchType = null;
+    this.glitchedTargetsThisRound.clear();
+
+    const isShowdown = !!data.isShowdown;
+    this.isShowdown = isShowdown;
 
     const me = (data.players || []).find(p => p.id === this.myPlayerId) || {};
-    const isGhost = me.status === 'ELIMINATED';
-    const tokens = me.glitchTokens || 0;
-    const canGlitch = isGhost || tokens >= 1;
-    const isShowdown = data.isShowdown;
-
-    // Filter alive opponents
-    const opponents = (data.players || []).filter(p => p.id !== this.myPlayerId && p.status !== 'ELIMINATED');
+    this.isGhost = me.status === 'ELIMINATED';
+    this.myTokens = me.glitchTokens || 0;
+    this.hasGhostGlitch = this.isGhost && !isShowdown;
 
     this.container.innerHTML = `
       <div class="preround-container glass-panel">
@@ -72,71 +73,15 @@ export class GameScreenManager {
           </div>
         </section>
 
-        <!-- Incoming Glitches Alert Area -->
-        <div id="incoming-glitches-alert" class="incoming-glitches-box hidden"></div>
-
-        <!-- Sabotage Glitch Console -->
-        <section class="sabotage-console">
-          <div class="sabotage-header">
-            <div class="sabotage-title-row">
-              <span class="console-title">${isGhost ? '👻 GHOST SABOTAGE' : '⚡ SPEND GLITCH TOKENS'}</span>
-              <span class="token-balance-badge" id="token-balance-badge">
-                ${isGhost ? '1 FREE GHOST GLITCH' : `🪙 ${tokens} TOKENS`}
-              </span>
-            </div>
-            <p class="console-subtitle">
-              ${isGhost ? (isShowdown ? 'Ghost glitches disabled during Showdown' : 'Select an alive player & choose an attack') : 'Sabotage an opponent’s screen in real-time'}
-            </p>
-          </div>
-
-          ${canGlitch && opponents.length > 0 && !(isGhost && isShowdown) ? `
-            <div class="targeting-flow">
-              <!-- Target Selection -->
-              <div class="target-select-row">
-                <span class="flow-label">1. CHOOSE TARGET:</span>
-                <div class="target-avatars-row">
-                  ${opponents.map(opp => `
-                    <button class="target-avatar-btn" data-target-id="${opp.id}" title="${opp.name}">
-                      <div class="avatar-mini">
-                        ${generateAvatarSvg(opp.color, opp.id, 40)}
-                      </div>
-                      <span class="target-name">${opp.name}</span>
-                    </button>
-                  `).join('')}
-                </div>
-              </div>
-
-              <!-- Glitch Type Selection -->
-              <div class="glitch-select-row">
-                <span class="flow-label">2. CHOOSE SABOTAGE (1 TOKEN):</span>
-                <div class="glitch-types-row">
-                  ${Object.values(GLITCH_METADATA).map(g => `
-                    <button class="glitch-type-btn" data-glitch-id="${g.id}" title="${g.name}: ${g.desc}">
-                      <span class="g-icon">${g.icon}</span>
-                      <span class="g-name">${g.name}</span>
-                    </button>
-                  `).join('')}
-                </div>
-              </div>
-
-              <!-- Submit Attack -->
-              <div class="attack-action-row">
-                <button id="btn-fire-glitch" class="btn btn-primary btn-attack btn-disabled" disabled>
-                  <span>SEND SABOTAGE ⚡</span>
-                </button>
-                <div id="glitch-action-feedback" class="action-feedback"></div>
-              </div>
-            </div>
-          ` : `
-            <div class="no-tokens-box">
-              <p>${isGhost && isShowdown ? 'Ghost glitches are disabled during the 1v1 Final Showdown.' : (isGhost ? 'No alive opponents to haunt.' : 'Score 50+ in challenges to earn Glitch Tokens!')}</p>
-            </div>
-          `}
-        </section>
+        <!-- Sabotage Prompt Hint -->
+        <div class="preround-sabotage-hint">
+          <span class="hint-icon">⚡</span>
+          <span>${this.isGhost
+            ? (isShowdown ? 'Ghost sabotage disabled during Final Showdown — pure skill finale.' : 'Ghost Haunt active! Tap any player during the round to glitch them for free.')
+            : 'Always-On Sabotage Bar is active during gameplay! Tap an opponent to glitch them.'}</span>
+        </div>
       </div>
     `;
-
-    this.bindPreRoundEvents(me, isGhost);
 
     // 3-second visual countdown with ticks
     let secondsLeft = Math.floor((data.duration || 3000) / 1000);
@@ -155,103 +100,76 @@ export class GameScreenManager {
     }, 1000);
   }
 
-  bindPreRoundEvents(me, isGhost) {
-    const targetBtns = this.container.querySelectorAll('.target-avatar-btn');
-    const glitchBtns = this.container.querySelectorAll('.glitch-type-btn');
-    const fireBtn = this.container.querySelector('#btn-fire-glitch');
-    const feedbackEl = this.container.querySelector('#glitch-action-feedback');
-
-    const updateFireBtnState = () => {
-      if (!fireBtn) return;
-      if (this.selectedTargetId && this.selectedGlitchType) {
-        fireBtn.disabled = false;
-        fireBtn.classList.remove('btn-disabled');
-      } else {
-        fireBtn.disabled = true;
-        fireBtn.classList.add('btn-disabled');
-      }
-    };
-
-    targetBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        sound.playClick();
-        targetBtns.forEach(b => b.classList.remove('selected'));
-        btn.classList.add('selected');
-        this.selectedTargetId = btn.getAttribute('data-target-id');
-        updateFireBtnState();
-      });
-    });
-
-    glitchBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        sound.playClick();
-        glitchBtns.forEach(b => b.classList.remove('selected'));
-        btn.classList.add('selected');
-        this.selectedGlitchType = btn.getAttribute('data-glitch-id');
-        updateFireBtnState();
-      });
-    });
-
-    if (fireBtn) {
-      fireBtn.addEventListener('click', () => {
-        if (!this.selectedTargetId || !this.selectedGlitchType) return;
-        sound.playClick();
-
-        if (isGhost) {
-          sound.playGhostGlitch();
-        }
-
-        this.onSendGlitch(this.selectedTargetId, this.selectedGlitchType);
-        fireBtn.disabled = true;
-        fireBtn.classList.add('btn-disabled');
-        if (feedbackEl) {
-          feedbackEl.textContent = 'Attack launched! ⚡';
-          feedbackEl.className = 'action-feedback text-success';
-        }
-      });
-    }
-  }
-
-  notifyGlitchIncoming(glitchType, fromPlayerName) {
-    sound.playGlitchHit();
-    const alertBox = this.container.querySelector('#incoming-glitches-alert');
-    if (!alertBox) return;
-
-    alertBox.classList.remove('hidden');
-    const meta = GLITCH_METADATA[glitchType] || { name: glitchType, icon: '⚡' };
-    const alertItem = document.createElement('div');
-    alertItem.className = 'incoming-alert-pill glow-pulse-pink';
-    alertItem.innerHTML = `
-      <span>⚠️ <strong>${fromPlayerName}</strong> glitched you with <strong>${meta.icon} ${meta.name}</strong>!</span>
-    `;
-    alertBox.appendChild(alertItem);
-  }
-
-  notifyGlitchConfirmed(targetPlayerId, glitchType, remainingTokens) {
-    const feedbackEl = this.container.querySelector('#glitch-action-feedback');
-    const badge = this.container.querySelector('#token-balance-badge');
-    const meta = GLITCH_METADATA[glitchType] || { name: glitchType };
-
-    if (badge && remainingTokens !== undefined) {
-      badge.textContent = `🪙 ${remainingTokens} TOKENS`;
-    }
-    if (feedbackEl) {
-      feedbackEl.textContent = `Sent ${meta.name}!`;
-      feedbackEl.className = 'action-feedback text-success';
-    }
-  }
-
-  // --- 2. GAMEPLAY SCREEN (ROUND ACTIVE) ---
+  // --- 2. GAMEPLAY SCREEN (ROUND ACTIVE & ALWAYS-ON SABOTAGE BAR) ---
 
   showRound(data, miniGameId, miniGameConfig) {
     this.cleanupCurrentGame();
     sound.playRoundStart();
 
-    // Check my active glitches
-    const activeGlitchesForMe = (data.activeGlitches && data.activeGlitches[this.myPlayerId]) || [];
+    const isShowdown = !!data.isShowdown;
+    this.isShowdown = isShowdown;
+    this.activeGlitchesMap = data.activeGlitches || {};
+
+    // Get current players state
+    const players = data.players || [];
+    const me = players.find(p => p.id === this.myPlayerId) || {};
+    this.isGhost = me.status === 'ELIMINATED';
+    if (me.glitchTokens !== undefined) {
+      this.myTokens = me.glitchTokens;
+    }
+    this.hasGhostGlitch = this.isGhost && !isShowdown;
+
+    // Check my active glitches from server
+    const activeGlitchesForMe = this.activeGlitchesMap[this.myPlayerId] || [];
+
+    // Filter alive opponents (cannot glitch yourself or eliminated players)
+    const opponents = players.filter(p => p.id !== this.myPlayerId && p.status !== 'ELIMINATED');
+
+    const canSabotage = !this.isGhost
+      ? (this.myTokens >= 1)
+      : (this.hasGhostGlitch && !isShowdown);
 
     this.container.innerHTML = `
       <div class="gameplay-wrapper" id="gameplay-wrapper">
+        <!-- Sticky Mid-Round Sabotage Bar (or Showdown Ghost Notice) -->
+        ${this.isGhost && isShowdown ? `
+          <div class="showdown-ghost-notice" id="showdown-ghost-notice">
+            <span>👻 Ghost sabotage disabled during Final Showdown — pure skill finale</span>
+          </div>
+        ` : `
+          <div class="sabotage-bar ${!canSabotage ? 'sabotage-bar-disabled' : ''}" id="sabotage-bar">
+            <div class="sabotage-bar-left">
+              <span class="sabotage-bar-title">${this.isGhost ? '👻 GHOST' : '⚡ ATTACK'}</span>
+              <span class="sabotage-token-pill" id="sabotage-token-pill">
+                ${this.isGhost ? (this.hasGhostGlitch ? '1 FREE' : '0 LEFT') : `🪙 ${this.myTokens}`}
+              </span>
+            </div>
+            <div class="sabotage-targets-list" id="sabotage-targets-list">
+              ${opponents.map(opp => {
+                const targetGlitches = this.activeGlitchesMap[opp.id] || [];
+                const isCapped = targetGlitches.length >= 3;
+                const isAlreadyGlitched = this.glitchedTargetsThisRound.has(opp.id);
+                const isDisabled = isCapped || isAlreadyGlitched || !canSabotage;
+
+                return `
+                  <button class="sabotage-avatar-btn ${isDisabled ? 'sabotage-target-disabled' : ''}" 
+                          data-target-id="${opp.id}" 
+                          data-target-name="${opp.name}"
+                          title="Glitch ${opp.name}"
+                          ${isDisabled ? 'disabled' : ''}>
+                    <div class="avatar-sabotage-wrap">
+                      ${generateAvatarSvg(opp.color, opp.id, 28)}
+                    </div>
+                    <span class="target-btn-name">${opp.name}</span>
+                    ${isCapped ? '<span class="target-cap-tag">MAX</span>' : ''}
+                  </button>
+                `;
+              }).join('')}
+            </div>
+            <div id="sabotage-bar-feedback" class="sabotage-bar-feedback"></div>
+          </div>
+        `}
+
         <!-- Top HUD Bar -->
         <header class="gameplay-hud">
           <div class="hud-left">
@@ -274,9 +192,13 @@ export class GameScreenManager {
           <div id="game-freeze-overlay" class="game-freeze-overlay hidden">
             <span class="freeze-text">TIME!</span>
           </div>
+          <!-- Mid-round incoming glitch alert overlay -->
+          <div id="incoming-glitch-banner" class="incoming-glitch-banner hidden"></div>
         </div>
       </div>
     `;
+
+    this.bindSabotageBarEvents();
 
     const canvas = this.container.querySelector('#minigame-canvas');
     const canvasContainer = this.container.querySelector('#game-canvas-container');
@@ -290,7 +212,6 @@ export class GameScreenManager {
     // Instantiate appropriate minigame
     const onScoreTick = (score) => {
       if (hudScore) hudScore.textContent = score;
-      // Send live score progress to server
       if (this.currentMiniGameInstance) {
         this.onSubmitScore(this.currentMiniGameInstance.getRawData());
       }
@@ -341,6 +262,159 @@ export class GameScreenManager {
     }, 1000);
   }
 
+  bindSabotageBarEvents() {
+    const sabotageBar = this.container.querySelector('#sabotage-bar');
+    if (!sabotageBar) return;
+
+    // Pointer isolation: stop propagation of all pointer events so canvas is never affected
+    const stopProp = (e) => e.stopPropagation();
+    sabotageBar.addEventListener('pointerdown', stopProp);
+    sabotageBar.addEventListener('touchstart', stopProp);
+    sabotageBar.addEventListener('mousedown', stopProp);
+
+    const buttons = sabotageBar.querySelectorAll('.sabotage-avatar-btn');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const targetId = btn.getAttribute('data-target-id');
+        if (!targetId || btn.disabled) return;
+
+        // Optimistically record anti-spam and disable button
+        this.glitchedTargetsThisRound.add(targetId);
+        btn.disabled = true;
+        btn.classList.add('sabotage-target-disabled');
+
+        sound.playClick();
+        if (this.isGhost) {
+          sound.playGhostGlitch();
+          this.hasGhostGlitch = false;
+        }
+
+        // Trigger socket emit (1-tap: server picks randomized eligible effect)
+        this.onSendGlitch(targetId);
+
+        this.updateSabotageBarState();
+      });
+    });
+  }
+
+  updateSabotageBarState() {
+    const sabotageBar = this.container.querySelector('#sabotage-bar');
+    if (!sabotageBar) return;
+
+    const tokenPill = this.container.querySelector('#sabotage-token-pill');
+    const canSabotage = !this.isGhost ? (this.myTokens >= 1) : (this.hasGhostGlitch && !this.isShowdown);
+
+    if (tokenPill) {
+      tokenPill.textContent = this.isGhost
+        ? (this.hasGhostGlitch ? '1 FREE' : '0 LEFT')
+        : `🪙 ${this.myTokens}`;
+    }
+
+    if (!canSabotage) {
+      sabotageBar.classList.add('sabotage-bar-disabled');
+    } else {
+      sabotageBar.classList.remove('sabotage-bar-disabled');
+    }
+
+    const buttons = sabotageBar.querySelectorAll('.sabotage-avatar-btn');
+    buttons.forEach(btn => {
+      const targetId = btn.getAttribute('data-target-id');
+      const targetGlitches = (this.activeGlitchesMap && this.activeGlitchesMap[targetId]) || [];
+      const isCapped = targetGlitches.length >= 3;
+      const isAlreadyGlitched = this.glitchedTargetsThisRound.has(targetId);
+
+      let capTag = btn.querySelector('.target-cap-tag');
+      if (isCapped) {
+        if (!capTag) {
+          capTag = document.createElement('span');
+          capTag.className = 'target-cap-tag';
+          capTag.textContent = 'MAX';
+          btn.appendChild(capTag);
+        }
+      } else if (capTag) {
+        capTag.remove();
+      }
+
+      if (isCapped || isAlreadyGlitched || !canSabotage) {
+        btn.disabled = true;
+        btn.classList.add('sabotage-target-disabled');
+      } else {
+        btn.disabled = false;
+        btn.classList.remove('sabotage-target-disabled');
+      }
+    });
+  }
+
+  updateActiveGlitches(activeGlitchesMap) {
+    this.activeGlitchesMap = activeGlitchesMap || {};
+
+    // Update active visual effects on my game canvas
+    const myGlitches = this.activeGlitchesMap[this.myPlayerId] || [];
+    const canvasContainer = this.container.querySelector('#game-canvas-container');
+    if (canvasContainer) {
+      glitchManager.applyGlitches(myGlitches, canvasContainer);
+    }
+
+    // Refresh Sabotage Bar avatar caps in real-time
+    this.updateSabotageBarState();
+  }
+
+  notifyGlitchConfirmed(targetPlayerId, glitchType, remainingTokens, isGhost) {
+    if (remainingTokens !== undefined) {
+      this.myTokens = remainingTokens;
+    }
+    if (isGhost) {
+      this.hasGhostGlitch = false;
+    }
+    this.glitchedTargetsThisRound.add(targetPlayerId);
+
+    const feedbackEl = this.container.querySelector('#sabotage-bar-feedback');
+    const meta = GLITCH_METADATA[glitchType] || { name: glitchType, icon: '⚡' };
+
+    if (feedbackEl) {
+      feedbackEl.textContent = `⚡ Sent ${meta.name}!`;
+      feedbackEl.className = 'sabotage-bar-feedback text-success';
+      setTimeout(() => {
+        if (feedbackEl) feedbackEl.textContent = '';
+      }, 2000);
+    }
+
+    this.updateSabotageBarState();
+  }
+
+  handleGlitchError(errorMessage) {
+    const feedbackEl = this.container.querySelector('#sabotage-bar-feedback');
+    if (feedbackEl) {
+      feedbackEl.textContent = errorMessage;
+      feedbackEl.className = 'sabotage-bar-feedback text-danger';
+      setTimeout(() => {
+        if (feedbackEl) feedbackEl.textContent = '';
+      }, 2500);
+    }
+    this.updateSabotageBarState();
+  }
+
+  notifyGlitchIncoming(glitchType, fromPlayerName) {
+    sound.playGlitchHit();
+    const meta = GLITCH_METADATA[glitchType] || { name: glitchType, icon: '⚡' };
+
+    // Dynamically apply glitch effect immediately to active screen
+    const canvasContainer = this.container.querySelector('#game-canvas-container');
+    glitchManager.addGlitch(glitchType, canvasContainer);
+
+    // Show mid-round non-blocking incoming banner
+    const banner = this.container.querySelector('#incoming-glitch-banner');
+    if (banner) {
+      banner.innerHTML = `<span>⚠️ <strong>${fromPlayerName}</strong> glitched you with <strong>${meta.icon} ${meta.name}</strong>!</span>`;
+      banner.classList.remove('hidden');
+      clearTimeout(this.bannerTimeout);
+      this.bannerTimeout = setTimeout(() => {
+        if (banner) banner.classList.add('hidden');
+      }, 2500);
+    }
+  }
+
   endRound() {
     sound.playRoundEnd();
 
@@ -351,7 +425,7 @@ export class GameScreenManager {
       this.currentMiniGameInstance.stop();
     }
 
-    // Clear glitch visual classes
+    // Clear glitch visual classes during intermission
     glitchManager.clearGlitches();
 
     // Show "TIME!" freeze banner
@@ -500,6 +574,10 @@ export class GameScreenManager {
     if (this.postRoundTimer) {
       clearInterval(this.postRoundTimer);
       this.postRoundTimer = null;
+    }
+    if (this.bannerTimeout) {
+      clearTimeout(this.bannerTimeout);
+      this.bannerTimeout = null;
     }
     if (this.currentMiniGameInstance) {
       this.currentMiniGameInstance.destroy();
