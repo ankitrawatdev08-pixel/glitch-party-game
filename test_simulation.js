@@ -237,6 +237,14 @@ function runUnitTests() {
   assert.strictEqual(reconnectedPlayer.status, PLAYER_STATUS.PLAYING);
   assert.strictEqual(reconnectedPlayer.glitchTokens, 4, 'Banked tokens preserved on reconnect');
 
+  // Check anti-spam persistence: p1 still cannot attack p2 in this round
+  assert.throws(
+    () => room.sendGlitch('p1', 'p2'),
+    /You have already glitched this target this round/,
+    'Anti-spam set must persist across reconnect'
+  );
+  console.log('✓ Banked tokens & anti-spam restrictions successfully persisted across reconnect');
+
   // Test 10: Late-Round 2.5s Carryover Regression (Smoke Test 1.0.1 Requirement)
   console.log('Testing Late-Round 2.5s Minimum-Duration Carryover...');
   const carryRoom = new GameRoom('CARRY', { id: 'cp1', name: 'Alice', socketId: 'cs1' }, mockIo);
