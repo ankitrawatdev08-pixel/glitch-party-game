@@ -34,6 +34,7 @@
       background: rgba(18, 16, 31, 0.95);
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 10px;
+      -webkit-backdrop-filter: blur(12px);
       backdrop-filter: blur(12px);
     }
     .verify-title {
@@ -44,6 +45,11 @@
       color: #06F9EC;
       letter-spacing: 0.5px;
     }
+    .verify-subtitle {
+      font-size: 11px;
+      color: #9CA3AF;
+      margin-top: 1px;
+    }
     .verify-badge {
       font-size: 11px;
       font-weight: 700;
@@ -52,6 +58,21 @@
       background: rgba(6, 249, 236, 0.15);
       border: 1px solid #06F9EC;
       color: #06F9EC;
+    }
+    .badge-testing {
+      color: #FBBF24 !important;
+      border-color: #FBBF24 !important;
+      background: rgba(251, 191, 36, 0.15) !important;
+    }
+    .badge-passed {
+      color: #10B981 !important;
+      border-color: #10B981 !important;
+      background: rgba(16, 185, 129, 0.15) !important;
+    }
+    .badge-failed {
+      color: #F43F7A !important;
+      border-color: #F43F7A !important;
+      background: rgba(244, 63, 122, 0.15) !important;
     }
     .test-controls-card {
       display: grid;
@@ -156,7 +177,7 @@
     <header class="verify-header">
       <div>
         <h1 class="verify-title">GLITCH PATCH 1.0.2 VERIFICATION HARNESS</h1>
-        <div style="font-size: 11px; color: #9CA3AF; margin-top: 1px;">
+        <div class="verify-subtitle">
           Directly exercising production: <code>GameScreenManager</code>, <code>glitch.js</code>, <code>utils.js</code>, <code>styles.css</code>
         </div>
       </div>
@@ -472,8 +493,7 @@
     window.runAllChecks = async function() {
       const overallBadge = document.getElementById('overall-badge');
       overallBadge.textContent = 'TESTING...';
-      overallBadge.style.color = '#FBBF24';
-      overallBadge.style.borderColor = '#FBBF24';
+      overallBadge.className = 'verify-badge badge-testing';
 
       log('=====================================================');
       log('RUNNING FULL AUTOMATED PATCH 1.0.2 VERIFICATION SUITE');
@@ -485,13 +505,11 @@
 
       if (passA && passB && passC) {
         overallBadge.textContent = '✓ ALL 3 GAPS FULLY VERIFIED';
-        overallBadge.style.color = '#10B981';
-        overallBadge.style.borderColor = '#10B981';
+        overallBadge.className = 'verify-badge badge-passed';
         log('🎉 ALL 3 CHECKS PASSED 100% WITH FLYING COLORS (PRODUCTION CODE)!');
       } else {
         overallBadge.textContent = 'VERIFICATION FAILED';
-        overallBadge.style.color = '#F43F7A';
-        overallBadge.style.borderColor = '#F43F7A';
+        overallBadge.className = 'verify-badge badge-failed';
       }
     };
 

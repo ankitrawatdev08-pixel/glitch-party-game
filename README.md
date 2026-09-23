@@ -24,13 +24,14 @@ Players compete in simultaneous **8-second micro-challenges** (tapping targets, 
    - Score ≥ 80 pts ➔ **+2 Tokens**
    - Score ≥ 50 pts ➔ **+1 Token**
    - Score < 50 pts ➔ **0 Tokens** (Max bank: 5 tokens)
-2. **Real-Time Sabotage (Pre-Round)**:
-   - Spend tokens during the 3-second pre-round to attack opponents' screens:
+2. **Real-Time Sabotage (Always-On Mid-Round)**:
+   - Spend tokens during the active 8-second round via the 1-Tap Sabotage Bar to attack opponents' screens:
      - 🔄 **Screen Flip**: Inverts their entire screen 180° via CSS.
      - 🍮 **Jelly Mode**: Distorts their UI with rapid fluid sine waves.
      - 🌫️ **Fog of War**: Covers 70% of their display in dark fog with a moving flashlight.
      - 🔀 **Input Swap**: Mirrors left and right touch/click coordinates.
      - ⚡ **Speed Demon**: Accelerates minigame pace and timer to 1.5× speed.
+   - Real-time attribution toasts alert both attacker (`💥 [Effect] → [Victim]!`) and victim (`🔥 [Attacker] hit you with [Effect]!` or `👻 [Ghost] (Ghost) hit you with [Effect]!`).
 3. **Phases & Eliminations**:
    - Every 3 rounds = 1 Phase.
    - Lowest cumulative Phase scorer is **GLITCHED OUT**!
