@@ -1041,8 +1041,8 @@ body {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
   transition: opacity 0.2s ease, filter 0.2s ease;
 }
 
@@ -1084,7 +1084,6 @@ body {
   align-items: center;
   gap: 8px;
   overflow-x: auto;
-  scrollbar-width: none;
   padding: 2px 0;
 }
 
@@ -1105,8 +1104,8 @@ body {
   font-size: 12px;
   font-weight: 600;
   transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
   touch-action: manipulation;
 }
 
