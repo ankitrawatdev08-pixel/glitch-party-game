@@ -1,7 +1,7 @@
 {
   "name": "glitch-party-game",
   "version": "1.0.0",
-  "description": "GLITCH — Real-Time Sabotage Party Game for Handshake AI Skills Studio × OpenAI Challenge",
+  "description": "GLITCH — Real-Time Sabotage Party Game",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

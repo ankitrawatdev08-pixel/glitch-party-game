@@ -1,6 +1,5 @@
 # ⚡ GLITCH — Real-Time Sabotage Party Game
 
-> **Contest Entry for Handshake AI Skills Studio × OpenAI "Create a Multiplayer Game" Challenge**  
 > *"WarioWare meets Mario Kart items — a party game where skill matters, but chaos keeps everyone dangerous."*
 
 ---

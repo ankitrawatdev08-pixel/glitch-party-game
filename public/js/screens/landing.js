@@ -95,9 +95,6 @@ export class LandingScreen {
           </div>
         </div>
 
-        <footer class="landing-footer">
-          <span>Built for Handshake AI Skills Studio × OpenAI Game Challenge</span>
-        </footer>
       </div>
     `;
 
