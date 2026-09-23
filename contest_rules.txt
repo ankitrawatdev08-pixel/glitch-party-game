@@ -1,0 +1,268 @@
+Handshake AI Skills Studio X OpenAI 
+Multiplayer Game Challenge Official 
+Rules​
+​
+ 
+ 
+NO PURCHASE OR PAYMENT OF ANY KIND IS NECESSARY TO ENTER OR WIN. A 
+PURCHASE WILL NOT INCREASE YOUR CHANCE OF WINNING. 
+​
+OPEN TO LEGAL RESIDENTS OF THE COUNTRIES LISTED IN APPENDIX A (“ELIGIBLE 
+COUNTRIES’), WHO ARE 18 YEARS/AGE OF MAJORITY OR OLDER. VOID WHERE 
+PROHIBITED. 
+ 
+The following Contest Official Rules (“Official Rules”) apply to your participation in the Handshake 
+AI Skills Studio X OpenAI Multiplayer Game Challenge (the “Contest”) offered by Stryder Corp. 
+d/b/a Handshake (“Handshake”). 
+Please read these Official Rules before entering the Contest. By submitting an entry, you agree to 
+be bound by these Official Rules and you acknowledge that you satisfy all Contest eligibility 
+requirements. 
+Eligibility: This Contest is open to individual legal residents of the Eligible Countries who are at least 
+18 years of age/age of majority or older as of the date of entry and must have an active Handshake 
+account associated with the email address used to enter. Officers, directors, employees, (and their 
+immediate families and household members regardless of where they live), promotional partners, 
+advertising/promotion agencies, and Prize suppliers of Handshake are not eligible to participate or 
+win any Prize. The Contest, and any website pages and advertisements relating thereto, is intended 
+for viewing only within the Eligible Countries, and contestants must be present in Eligible Countries 
+at the time they enter. 
+How to Enter: There is only one (1) way for eligible participants to enter the Contest for a chance to 
+win one of the Prizes set forth below (each a “Prize”):   
+ 
+Submit the project(s) you built with OpenAI: Create a Multiplayer Game mission in Handshake.  
+Entries must include the following: 
+a.​ Project title 
+b.​ Project cover image 
+c.​ Project description 
+d.​ Project link/URL 
+ 
+The projects must be submitted to the Handshake AI Skills Studio “Create a Multiplayer Game” 
+Mission in the Handshake product. All valid Entries must be submitted or received between 
+9/22/2026 and 10/30/2026 at 11:59 PM PT (“Entry Deadline”) in order to be eligible to win the 
+Contest. YOU WILL NOT BE ENTERED IF (1) YOU DO NOT MEET ALL OF THE ELIGIBILITY 
+REQUIREMENTS OR (2) YOU FAIL TO COMPLETE ANY REQUIREMENT SPECIFIED IN THE “HOW 
+
+TO ENTER” SECTION OF THESE OFFICIAL RULES.  Each winner will be notified at the email 
+address associated with their Handshake profile. Handshake reserves the right to cancel the 
+Contest at any time. Entering the Contest is free: NO PURCHASE OR PAYMENT IS REQUIRED AND 
+A PURCHASE WILL NOT INCREASE YOUR ODDS OF WINNING. 
+  
+Handshake reserves the right not to award any Prize.  
+ 
+Rules of Entry: Multiple entries per eligible participant are allowed. The Contest is VOID WHERE 
+PROHIBITED or restricted by law and is subject to all applicable federal, state and local laws and 
+regulations. Handshake reserves the right to ask for additional information at any time for purposes 
+of determining entry eligibility or fraud prevention. 
+Winner Selection Method:  
+Round 1: All Entries will be evaluated against that month's project requirements using the following 
+weighted criteria: 
+○​
+Execution (25%)​
+ 1: Does not meet the project requirements or does not function reliably​
+ 2: Meets some project requirements; major gaps or inconsistencies​
+ 3: Meets all project requirements; core functionality works​
+ 4: Meets all project requirements and works well with minor issues; mostly 
+complete​
+ 5: Exceeds the project requirements; fully functional, stable, and demo-ready 
+end-to-end 
+○​
+Creativity (25%)​
+ 1: Common idea with minimal differentiation​
+ 2: Slight variation on a common idea​
+ 3: Interesting twist or thoughtful angle​
+ 4: Distinctive idea with notable originality​
+ 5: Fresh concept, unexpected use case, or particularly clever implementation 
+○​
+Usefulness / Value (25%)​
+ 1: Hard to see the point or appeal​
+ 2: Limited or niche appeal; impact is unclear​
+ 3: Clear practical or experiential value for its intended use​
+ 4: Strong value with clear benefit to its intended users​
+ 5: Highly compelling — meaningfully serves its purpose or delights its intended 
+audience 
+○​
+Polish & Thoughtfulness (25%)​
+ 1: Rough, confusing, limited usability​
+ 2: Basic usability but lacks refinement or clarity​
+ 3: Usable with basic UX considerations​
+ 4: Well-polished with thoughtful design and usability​
+
+ 5: Feels intentional and "real," with thoughtful details, edge cases, and clear 
+guidance 
+Round 2: The top 20 Entries from Round 1 will be evaluated on the same criteria listed above by a 
+panel of judges from Handshake or partner sponsors. 
+Prizes:  A Prize winner may be required by Handshake to submit written acceptance of the Prize, a 
+waiver of liability, or proof of Contest eligibility and, except where prohibited by law, a Publicity 
+Release in the form(s) provided by Handshake or its designee in order to claim such winner’s Prize. 
+Handshake reserves the right to select an alternative potential winner, if any selected Prize winner 
+does not comply with the terms and conditions of these Official Rules. 
+Top three winners based on the criteria above will receive: 
+●​
+$1,000.00 US Dollars 
+Winners will be notified by email using the address associated with their Handshake account within 
+30 days of the Entry Deadline. Each Prize winner will be responsible for providing a valid email 
+address in order to be notified and win. Failure to provide a valid email address could disqualify you 
+from winning a Prize. 
+ 
+No substitution or transfer of Prizes permitted, except at the sole discretion of Handshake. If any 
+portion of a Prize is unavailable, Handshake reserves the right to substitute that portion of a Prize 
+with a Prize of equal or greater value. 
+Each Prize winner will be responsible for paying all costs and expenses related to the use of a Prize 
+including, but not limited to, applicable federal, state or local taxes, and any expenses that might 
+reasonably be incurred by the Prize winner in receiving or using the Prize. Please consult a tax 
+professional to discuss your particular situation. 
+Each Prize will be awarded "AS IS" and WITHOUT WARRANTY OF ANY KIND, express or implied 
+(including, without limitation, any implied warranty of merchantability or fitness for a particular 
+purpose). You agree that Handshake’s decisions related to the Contest and all distribution of Prizes 
+are final. Any Prize not claimed under the terms of these Official Rules may be deemed, in 
+Handshake’s sole discretion, to be forfeited and returned to Handshake. 
+Information Submitted: Except where prohibited by law, by entering the Contest, you grant (1) 
+Handshake, OpenAI, and any entity involved in any aspect of the Contest and (2) each of their 
+respective affiliates and agents with an irrevocable, worldwide, perpetual license to use your name 
+biography, likeness, voice, photographs, video, opinions, statements, hometown, state and country 
+responses in any manner and in any medium for its promotional purposes without additional 
+compensation, including posting in a winner's list. By submitting an Entry, you further grant 
+Handshake, OpenAI, and each of their respective affiliates and agents an irrevocable, worldwide, 
+perpetual, royalty-free, fully paid-up license to reproduce, publicly display, distribute, and otherwise 
+use your Handshake AI Skills Studio X OpenAI Multiplayer Game Challenge submission (including 
+the project built with OpenAI) in any manner and in any medium for the purposes of promoting the 
+Handshake AI Skills Studio X OpenAI Multiplayer Game Challenge and OpenAI's services, without 
+additional compensation. Handshake may be required to disclose the information about each 
+
+winner to state regulatory authorities. You agree that Handshake may send marketing emails to the 
+email address provided.  You further agree that OpenAI may contact you via email regarding the 
+Contest and related opportunities. 
+Contest Sponsor: The Sponsor of the Contest is: Stryder Corp. d/b/a Handshake, 225 Bush St 12th 
+floor, San Francisco, CA 94104 
+Additional Terms: By entering the Contest, you agree to comply with these Official Rules, including 
+all eligibility requirements and the Challenge Code of Conduct. Participants acknowledge that their 
+use of OpenAI’s services, including OpenAI, is subject to OpenAI’s then-current Terms of Use. It is 
+expressly agreed and understood that Handshake is the sole Sponsor and administrator of this 
+Contest, and that OpenAI is not responsible for the administration or operation of this Contest.  
+Handshake is not responsible for: (a) lost, misdirected, late, incomplete, or unintelligible entries or 
+for inaccurate entry information, whether caused by you or by any of the equipment or 
+programming associated with or utilized in the Contest, or by any technical or human error that may 
+occur in the processing of entries; (b) any printing or typographical errors in any materials 
+associated with the Contest; (c) any error in the operation or transmission, theft, destruction, 
+unauthorized access to, or alteration of, entries, or for technical, network, telephone, computer, 
+hardware or software, malfunctions of any kind, or inaccurate transmission of, or failure to receive 
+any entry information on account of technical problems or traffic congestion on the Internet or at 
+any website; or (d) injury or damage to your or any other computer or device resulting from 
+downloading any materials in connection with the Contest. Handshake may, in its sole discretion, 
+disqualify any individual found to be: (x) tampering with the entry process or the operation of the 
+Contest or the Event; (y) acting in violation of these Official Rules or the Challenge Code of 
+Conduct; or (z) acting in an unsportsmanlike or disruptive manner or with intent to annoy, abuse, 
+threaten or harass any other person.  
+The Handshake account holder name and associated email address used to enter the Contest at 
+the actual time of entry will be deemed to be the Contest entrant and must comply with these rules 
+in the event of a dispute as to entries submitted by multiple users having the same email account.. 
+All entries will be deemed to have been made by the Handshake account holder of the submitted 
+email address.   Submitting mass entries or entries generated by a script, macro or use of 
+automated devices is prohibited and will result in disqualification. 
+By entering the Contest, you agree (for yourself and your heirs) that (1) Handshake, OpenAI, and 
+any entity involved in any aspect of the Contest and (2) each of their respective affiliates and agents 
+(all aforementioned parties are collectively, the "Released Parties") will have no liability, and will be 
+held harmless from and against liability, loss, injury or damage to property or person, including 
+death, and reasonable attorney's fees and court costs, due in whole or in part, directly or indirectly, 
+by reason of the acceptance, possession, use or misuse of a Prize or participation in the Contest, 
+even if caused or contributed to by the negligence of any of the Released Parties. Handshake does 
+not endorse any opinion, recommendation, or advice provided in the Contest, and Handshake 
+expressly disclaims all liability in connection with such content.   
+Disputes:  YOU AGREE/ENTRANT AGREES THAT: (A) ANY AND ALL DISPUTES, CLAIMS, AND 
+CAUSES OF ACTION ARISING OUT OF OR CONNECTED WITH THE CONTEST, OR ANY 
+PRIZES AWARDED SHALL BE RESOLVED INDIVIDUALLY, WITHOUT RESORT TO ANY FORM 
+OF CLASS ACTION, AND SOLELY AND EXCLUSIVELY IN A FEDERAL OR STATE COURT 
+
+LOCATED IN CALIFORNIA; YOU SUBMIT/ENTRANT SUBMITS TO THE SOLE AND EXCLUSIVE 
+PERSONAL JURISDICTION TO SAID COURTS IN THE STATE OF CALIFORNIA  FOR ANY 
+SUCH DISPUTE AND IRREVOCABLY WAIVES ANY AND ALL RIGHTS TO OBJECT TO SUCH 
+JURISDICTION; (B) ANY AND ALL CLAIMS, JUDGMENTS, AND AWARDS SHALL BE LIMITED 
+TO ACTUAL OUT OF POCKET COSTS INCURRED, INCLUDING COSTS ASSOCIATED WITH 
+ENTERING THE CONTEST BUT IN NO EVENT ATTORNEYS’ FEES; AND (C) UNDER NO 
+CIRCUMSTANCES WILL YOU/ENTRANT BE PERMITTED TO OBTAIN AWARDS FOR AND 
+YOU/ENTRANT HEREBY WAIVES ALL RIGHTS TO CLAIM PUNITIVE, INCIDENTAL AND 
+CONSEQUENTIAL DAMAGES AND ANY OTHER DAMAGES, OTHER THAN FOR ACTUAL 
+OUT-OF-POCKET EXPENSES, AND ANY AND ALL RIGHTS TO HAVE DAMAGES MULTIPLIED 
+OR OTHERWISE INCREASED.  SOME JURISDICTIONS DO NOT ALLOW THE LIMITATION OR 
+EXCLUSION OF LIABILITY FOR INCIDENTAL OR CONSEQUENTIAL DAMAGES, SO THE 
+ABOVE MAY NOT APPLY TO YOU.  All issues and questions concerning the construction, validity, 
+interpretation and enforceability of these Official Rules, or your or Sponsor’s rights and obligations 
+in connection with the Contest shall be governed by, and construed in accordance with, the laws of 
+the State of California, without giving effect to any choice of law or conflict of law rules of provisions 
+(whether of the State of California the United States, or any other jurisdiction), which would cause 
+the application of the laws of any jurisdiction other than the State of California. 
+Privacy Notice: All information submitted in connection with the Contest will be treated in 
+accordance with these Official Rules and Handshake’s Global Privacy Policy. 
+ 
+ 
+APPENDIX A - ELIGIBLE COUNTRIES LIST 
+ 
+THE FOLLOWING COUNTRIES ARE ELIGIBLE FOR THE CONTEST. IF YOU ARE NOT A LEGAL 
+RESIDENT OF ONE OF THESE COUNTIRES YOU WILL NOT BE ELIGIBLE.  
+ 
+United States 
+Canada 
+Anguilla 
+Bermuda 
+Cayman Islands 
+Montserrat 
+Puerto Rico 
+Sint Maarten 
+Turks & Caicos Islands 
+British Virgin Islands 
+US Virgin Islands 
+American Samoa 
+Guam 
+Northern Mariana Islands 
+US Minor Outlying Islands 
+Bahamas 
+Barbados 
+
+Antigua & Barbuda 
+Grenada 
+St Lucia 
+Dominica 
+St Vincent & Grenadines 
+Dominican Republic 
+Trinidad & Tobago 
+St Kitts & Nevis 
+Jamaica 
+Greece 
+Netherlands 
+Belgium 
+France 
+Spain 
+Portugal 
+Luxembourg 
+Ireland 
+Iceland 
+Malta 
+Finland 
+Bulgaria 
+Hungary 
+Lithuania 
+Latvia 
+Estonia 
+Andorra 
+Monaco 
+San Marino 
+Croatia 
+Slovenia 
+Italy 
+Romania 
+Switzerland 
+Czechia 
+Slovakia 
+Liechtenstein 
+Austria 
+United Kingdom 
+Guernsey 
+Isle of Man 
+
+Jersey 
+Denmark 
+Sweden 
+Norway 
+Poland 
+Germany 
+India 
+ 

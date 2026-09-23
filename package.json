@@ -1,0 +1,27 @@
+{
+  "name": "glitch-party-game",
+  "version": "1.0.0",
+  "description": "GLITCH — Real-Time Sabotage Party Game for Handshake AI Skills Studio × OpenAI Challenge",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "multiplayer",
+    "socket.io",
+    "party-game",
+    "sabotage",
+    "real-time",
+    "canvas"
+  ],
+  "author": "GLITCH Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

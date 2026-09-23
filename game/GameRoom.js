@@ -1,0 +1,794 @@
+// game/GameRoom.js
+const {
+  GAME_STATES,
+  PLAYER_STATUS,
+  GLITCH_TYPES,
+  MINIGAMES,
+  TIMINGS,
+  TOKEN_RULES,
+  AVATAR_COLORS
+} = require('./constants');
+const MiniGameEngine = require('./MiniGameEngine');
+
+class GameRoom {
+  constructor(code, hostPlayer, io, onDestroy) {
+    this.code = code;
+    this.io = io;
+    this.onDestroy = onDestroy; // callback when room should be removed
+    this.hostId = hostPlayer.id;
+    this.status = GAME_STATES.LOBBY;
+
+    this.players = new Map(); // playerId -> Player
+    this.playerOrder = []; // playerIds in join order
+
+    this.settings = {
+      roundDuration: TIMINGS.ROUND_DURATION,
+      preRoundDuration: TIMINGS.PRE_ROUND_DURATION,
+      postRoundDuration: TIMINGS.POST_ROUND_DURATION,
+      eliminationDuration: TIMINGS.ELIMINATION_DURATION
+    };
+
+    this.totalPhases = 1;
+    this.totalRounds = 3;
+    this.currentPhase = 1;
+    this.currentRound = 1; // 1-3 within current phase
+    this.globalRound = 0; // overall round count
+
+    this.miniGameQueue = [];
+    this.currentMiniGame = null;
+    this.miniGameConfig = null;
+    this.roundStartedAt = 0;
+
+    // Glitch tracking
+    // targetPlayerId -> Array of { glitchType, fromPlayerId, fromPlayerName }
+    this.pendingGlitches = new Map();
+    this.activeGlitches = new Map();
+    this.ghostGlitchUsed = new Set(); // ghost playerIds who used their free glitch this round
+
+    // Scoring & History
+    this.phaseScores = new Map(); // playerId -> number
+    this.allScores = new Map(); // playerId -> number[]
+    this.submittedScores = new Map(); // playerId -> rawData
+    this.totalTokensEarned = new Map(); // playerId -> number (for tie-breaking)
+    this.eliminationOrder = []; // playerIds from first eliminated to last
+    this.tieBreakInfo = null;
+
+    // Timers
+    this.stateTimer = null;
+    this.disconnectTimers = new Map(); // playerId -> timeout
+    this.idleTimer = null;
+    this.createdAt = Date.now();
+
+    this.addPlayer(hostPlayer);
+    this.resetLobbyIdleTimer();
+  }
+
+  // --- ROOM & PLAYER MANAGEMENT ---
+
+  addPlayer(playerData) {
+    const colorIndex = this.players.size % AVATAR_COLORS.length;
+    const player = {
+      id: playerData.id,
+      name: this.formatPlayerName(playerData.name),
+      socketId: playerData.socketId,
+      color: AVATAR_COLORS[colorIndex],
+      status: PLAYER_STATUS.WAITING,
+      glitchTokens: 0,
+      totalScore: 0,
+      activeGlitches: [],
+      disconnectedAt: null
+    };
+
+    this.players.set(player.id, player);
+    if (!this.playerOrder.includes(player.id)) {
+      this.playerOrder.push(player.id);
+    }
+    this.allScores.set(player.id, []);
+    this.phaseScores.set(player.id, 0);
+    this.totalTokensEarned.set(player.id, 0);
+
+    this.resetLobbyIdleTimer();
+    return player;
+  }
+
+  formatPlayerName(rawName) {
+    let name = (rawName || 'Player').trim().slice(0, 12);
+    if (!name) name = 'Player';
+
+    // Duplicate name handling: auto-append number
+    let finalName = name;
+    let counter = 2;
+    const existingNames = Array.from(this.players.values()).map(p => p.name.toLowerCase());
+    while (existingNames.includes(finalName.toLowerCase())) {
+      finalName = `${name} ${counter}`;
+      counter++;
+    }
+    return finalName;
+  }
+
+  removePlayer(playerId) {
+    const player = this.players.get(playerId);
+    if (!player) return;
+
+    this.players.delete(playerId);
+    this.playerOrder = this.playerOrder.filter(id => id !== playerId);
+    this.clearDisconnectTimer(playerId);
+
+    // Host migration
+    if (this.hostId === playerId && this.players.size > 0) {
+      this.hostId = this.playerOrder[0];
+      this.io.to(this.code).emit('host-changed', { newHostId: this.hostId });
+    }
+
+    this.io.to(this.code).emit('player-left', { playerId });
+
+    // Check if empty
+    if (this.players.size === 0) {
+      this.scheduleEmptyRoomCleanup();
+    } else if (this.status !== GAME_STATES.LOBBY && this.status !== GAME_STATES.GAME_OVER) {
+      this.checkRemainingPlayers();
+    }
+  }
+
+  handleDisconnect(playerId) {
+    const player = this.players.get(playerId);
+    if (!player) return;
+
+    player.status = PLAYER_STATUS.DISCONNECTED;
+    player.disconnectedAt = Date.now();
+    this.io.to(this.code).emit('player-disconnected', { playerId, playerName: player.name });
+
+    if (this.status === GAME_STATES.LOBBY) {
+      // 15 seconds grace in lobby
+      this.disconnectTimers.set(playerId, setTimeout(() => {
+        this.removePlayer(playerId);
+      }, TIMINGS.LOBBY_DISCONNECT_GRACE));
+    } else {
+      // 30 seconds grace in game
+      this.disconnectTimers.set(playerId, setTimeout(() => {
+        this.finalizeEliminationOnDisconnect(playerId);
+      }, TIMINGS.DISCONNECT_GRACE_PERIOD));
+    }
+
+    // If host disconnected, migrate immediately so room doesn't stall
+    if (this.hostId === playerId) {
+      const nextActive = this.playerOrder.find(id => {
+        const p = this.players.get(id);
+        return p && p.status !== PLAYER_STATUS.DISCONNECTED;
+      });
+      if (nextActive) {
+        this.hostId = nextActive;
+        this.io.to(this.code).emit('host-changed', { newHostId: this.hostId });
+      }
+    }
+  }
+
+  handleReconnect(playerId, socketId) {
+    const player = this.players.get(playerId);
+    if (!player) return null;
+
+    this.clearDisconnectTimer(playerId);
+    player.socketId = socketId;
+    player.disconnectedAt = null;
+
+    if (this.eliminationOrder.includes(playerId)) {
+      player.status = PLAYER_STATUS.ELIMINATED;
+    } else {
+      player.status = this.status === GAME_STATES.LOBBY ? PLAYER_STATUS.WAITING : PLAYER_STATUS.PLAYING;
+    }
+
+    this.io.to(this.code).emit('player-reconnected', { playerId, playerName: player.name });
+    return player;
+  }
+
+  clearDisconnectTimer(playerId) {
+    if (this.disconnectTimers.has(playerId)) {
+      clearTimeout(this.disconnectTimers.get(playerId));
+      this.disconnectTimers.delete(playerId);
+    }
+  }
+
+  finalizeEliminationOnDisconnect(playerId) {
+    const player = this.players.get(playerId);
+    if (!player) return;
+
+    if (this.status !== GAME_STATES.GAME_OVER && !this.eliminationOrder.includes(playerId)) {
+      player.status = PLAYER_STATUS.ELIMINATED;
+      this.eliminationOrder.push(playerId);
+      this.io.to(this.code).emit('player-eliminated-disconnect', { playerId, playerName: player.name });
+      this.checkRemainingPlayers();
+    }
+  }
+
+  checkRemainingPlayers() {
+    const activeAlivePlayers = Array.from(this.players.values()).filter(p =>
+      p.status === PLAYER_STATUS.PLAYING || (p.status === PLAYER_STATUS.DISCONNECTED && !this.eliminationOrder.includes(p.id))
+    );
+
+    if (activeAlivePlayers.length <= 1 && this.players.size >= 2) {
+      // 1 player left standing by default!
+      const winner = activeAlivePlayers[0] || Array.from(this.players.values())[0];
+      this.triggerGameOver(winner);
+    }
+  }
+
+  // --- GAME LIFECYCLE & STATE MACHINE ---
+
+  startGame(requestingPlayerId) {
+    if (requestingPlayerId !== this.hostId) {
+      throw new Error('Only the host can start the game.');
+    }
+    if (this.players.size < 2) {
+      throw new Error('Need at least 2 players to start.');
+    }
+    if (this.status !== GAME_STATES.LOBBY) {
+      throw new Error('Game already in progress.');
+    }
+
+    this.clearTimer();
+    const count = this.players.size;
+
+    if (count === 2) {
+      this.totalPhases = 2; // 2 phases = 6 rounds total, no eliminations
+      this.totalRounds = 6;
+    } else {
+      this.totalPhases = count - 1;
+      this.totalRounds = this.totalPhases * 3;
+    }
+
+    this.currentPhase = 1;
+    this.currentRound = 1;
+    this.globalRound = 0;
+    this.eliminationOrder = [];
+    this.refillMiniGameQueue();
+
+    // Set all players to PLAYING
+    for (const player of this.players.values()) {
+      player.status = PLAYER_STATUS.PLAYING;
+      player.glitchTokens = 0;
+      player.totalScore = 0;
+      this.phaseScores.set(player.id, 0);
+      this.allScores.set(player.id, []);
+      this.totalTokensEarned.set(player.id, 0);
+    }
+
+    this.io.to(this.code).emit('game-starting', {
+      totalPhases: this.totalPhases,
+      totalRounds: this.totalRounds,
+      playerCount: count
+    });
+
+    this.startPreRound();
+  }
+
+  refillMiniGameQueue() {
+    const games = MINIGAMES.map(g => g.id).sort(() => Math.random() - 0.5);
+    this.miniGameQueue = [...games];
+  }
+
+  getNextMiniGame() {
+    if (this.miniGameQueue.length === 0) {
+      this.refillMiniGameQueue();
+    }
+    return this.miniGameQueue.shift();
+  }
+
+  startPreRound() {
+    this.status = GAME_STATES.PRE_ROUND;
+    this.globalRound++;
+    this.pendingGlitches.clear();
+    this.ghostGlitchUsed.clear();
+    this.submittedScores.clear();
+
+    // Check if 2 players remain in 3+ player game -> Showdown!
+    const alivePlayers = this.getAlivePlayers();
+    const isShowdown = this.players.size > 2 && alivePlayers.length === 2;
+
+    this.currentMiniGame = this.getNextMiniGame();
+    this.miniGameConfig = MiniGameEngine.generateRoundConfig(this.currentMiniGame, this.globalRound);
+
+    const miniGameInfo = MINIGAMES.find(g => g.id === this.currentMiniGame);
+
+    this.io.to(this.code).emit('pre-round', {
+      roundNumber: this.currentRound,
+      globalRound: this.globalRound,
+      phase: this.currentPhase,
+      totalPhases: this.totalPhases,
+      totalRounds: this.totalRounds,
+      miniGame: miniGameInfo,
+      miniGameConfig: this.miniGameConfig,
+      duration: this.settings.preRoundDuration,
+      isShowdown,
+      players: this.getPublicPlayersState()
+    });
+
+    this.stateTimer = setTimeout(() => {
+      this.startRound();
+    }, this.settings.preRoundDuration);
+  }
+
+  startRound() {
+    this.status = GAME_STATES.PLAYING;
+    this.roundStartedAt = Date.now();
+
+    // Transfer pending glitches to active
+    this.activeGlitches = new Map(this.pendingGlitches);
+
+    // Attach active glitches to each player's state
+    for (const [playerId, player] of this.players.entries()) {
+      const glitches = this.activeGlitches.get(playerId) || [];
+      player.activeGlitches = glitches.map(g => g.glitchType);
+    }
+
+    this.io.to(this.code).emit('round-start', {
+      duration: this.settings.roundDuration,
+      activeGlitches: Object.fromEntries(
+        Array.from(this.activeGlitches.entries()).map(([pid, list]) => [pid, list.map(g => g.glitchType)])
+      )
+    });
+
+    this.stateTimer = setTimeout(() => {
+      this.endRound();
+    }, this.settings.roundDuration);
+  }
+
+  submitScore(playerId, rawData) {
+    if (this.status !== GAME_STATES.PLAYING) return;
+    this.submittedScores.set(playerId, rawData);
+  }
+
+  sendGlitch(fromPlayerId, targetPlayerId, glitchType) {
+    if (this.status !== GAME_STATES.PRE_ROUND) {
+      throw new Error('Glitches can only be sent during pre-round.');
+    }
+    const sender = this.players.get(fromPlayerId);
+    const target = this.players.get(targetPlayerId);
+
+    if (!sender || !target) {
+      throw new Error('Player not found.');
+    }
+    if (fromPlayerId === targetPlayerId) {
+      throw new Error('Cannot glitch yourself.');
+    }
+    if (!GLITCH_TYPES[glitchType]) {
+      throw new Error('Invalid glitch type.');
+    }
+
+    // Ghost or Alive?
+    const isGhost = sender.status === PLAYER_STATUS.ELIMINATED;
+    const isShowdown = this.players.size > 2 && this.getAlivePlayers().length === 2;
+
+    if (isShowdown && isGhost) {
+      throw new Error('Ghost glitches are disabled during Final Showdown.');
+    }
+
+    if (isGhost) {
+      if (this.ghostGlitchUsed.has(fromPlayerId)) {
+        throw new Error('Ghosts can only send 1 glitch per round.');
+      }
+    } else {
+      if (sender.glitchTokens < TOKEN_RULES.COST_PER_GLITCH) {
+        throw new Error('Not enough Glitch Tokens.');
+      }
+    }
+
+    // Target duplicate check
+    if (!this.pendingGlitches.has(targetPlayerId)) {
+      this.pendingGlitches.set(targetPlayerId, []);
+    }
+    const targetList = this.pendingGlitches.get(targetPlayerId);
+
+    if (targetList.some(g => g.glitchType === glitchType)) {
+      throw new Error(`Target is already affected by ${GLITCH_TYPES[glitchType].name}.`);
+    }
+
+    if (targetList.length >= TOKEN_RULES.MAX_GLITCHES_PER_PLAYER) {
+      throw new Error('Target has reached the maximum 3 glitch limit for this round.');
+    }
+
+    // Deduct cost
+    if (isGhost) {
+      this.ghostGlitchUsed.add(fromPlayerId);
+    } else {
+      sender.glitchTokens -= TOKEN_RULES.COST_PER_GLITCH;
+    }
+
+    targetList.push({
+      glitchType,
+      fromPlayerId,
+      fromPlayerName: sender.name
+    });
+
+    // Notify sender & target
+    if (sender.socketId) {
+      this.io.to(sender.socketId).emit('glitch-confirmed', {
+        targetPlayerId,
+        glitchType,
+        remainingTokens: sender.glitchTokens
+      });
+    }
+
+    if (target.socketId) {
+      this.io.to(target.socketId).emit('glitch-incoming', {
+        glitchType,
+        fromPlayerName: sender.name
+      });
+    }
+
+    return true;
+  }
+
+  endRound() {
+    this.status = GAME_STATES.POST_ROUND;
+    this.clearTimer();
+
+    this.io.to(this.code).emit('round-end');
+
+    // Calculate scores and tokens
+    const roundScores = {};
+    const tokenChanges = {};
+
+    for (const player of this.players.values()) {
+      if (player.status === PLAYER_STATUS.ELIMINATED) continue;
+
+      const raw = this.submittedScores.get(player.id) || {};
+      const score = MiniGameEngine.calculateScore(this.currentMiniGame, raw);
+
+      roundScores[player.id] = score;
+      player.totalScore += score;
+
+      const currentPhaseScore = (this.phaseScores.get(player.id) || 0) + score;
+      this.phaseScores.set(player.id, currentPhaseScore);
+
+      const history = this.allScores.get(player.id) || [];
+      history.push(score);
+      this.allScores.set(player.id, history);
+
+      // Token earning
+      let tokensEarned = 0;
+      if (score >= TOKEN_RULES.HIGH_SCORE_THRESHOLD) {
+        tokensEarned = TOKEN_RULES.HIGH_SCORE_TOKENS;
+      } else if (score >= TOKEN_RULES.MID_SCORE_THRESHOLD) {
+        tokensEarned = TOKEN_RULES.MID_SCORE_TOKENS;
+      }
+
+      tokenChanges[player.id] = tokensEarned;
+      player.glitchTokens = Math.min(TOKEN_RULES.MAX_TOKENS, player.glitchTokens + tokensEarned);
+
+      const totalTokens = (this.totalTokensEarned.get(player.id) || 0) + tokensEarned;
+      this.totalTokensEarned.set(player.id, totalTokens);
+
+      player.activeGlitches = [];
+    }
+
+    const standings = this.getStandings();
+
+    this.io.to(this.code).emit('round-results', {
+      scores: roundScores,
+      tokenChanges,
+      standings,
+      duration: this.settings.postRoundDuration,
+      roundNumber: this.currentRound,
+      phase: this.currentPhase
+    });
+
+    this.stateTimer = setTimeout(() => {
+      this.handlePostRoundTransition();
+    }, this.settings.postRoundDuration);
+  }
+
+  handlePostRoundTransition() {
+    // Check if phase is complete (every 3 rounds)
+    if (this.currentRound >= 3) {
+      const alivePlayers = this.getAlivePlayers();
+
+      // 2-player game mode: 6 rounds, no elimination
+      if (this.players.size === 2) {
+        if (this.currentPhase >= this.totalPhases) {
+          const winner = this.resolveWinnerBetween(alivePlayers[0], alivePlayers[1]);
+          this.triggerGameOver(winner);
+          return;
+        } else {
+          this.advancePhase();
+          this.startPreRound();
+          return;
+        }
+      }
+
+      // 3+ player game: elimination after each phase
+      if (alivePlayers.length > 2) {
+        this.triggerElimination();
+      } else if (alivePlayers.length === 2) {
+        // Showdown finished!
+        const winner = this.resolveWinnerBetween(alivePlayers[0], alivePlayers[1]);
+        this.triggerGameOver(winner);
+      } else {
+        const winner = alivePlayers[0] || Array.from(this.players.values())[0];
+        this.triggerGameOver(winner);
+      }
+    } else {
+      // Continue next round in same phase
+      this.currentRound++;
+      this.startPreRound();
+    }
+  }
+
+  advancePhase() {
+    this.currentPhase++;
+    this.currentRound = 1;
+    // Reset phase scores for the new phase
+    for (const id of this.players.keys()) {
+      this.phaseScores.set(id, 0);
+    }
+  }
+
+  triggerElimination() {
+    this.status = GAME_STATES.ELIMINATION;
+    this.clearTimer();
+
+    const alivePlayers = this.getAlivePlayers();
+    const eliminatedPlayer = this.determineEliminatedPlayer(alivePlayers);
+
+    eliminatedPlayer.status = PLAYER_STATUS.ELIMINATED;
+    this.eliminationOrder.push(eliminatedPlayer.id);
+
+    const remainingCount = this.getAlivePlayers().length;
+    const isNextShowdown = remainingCount === 2;
+
+    this.io.to(this.code).emit('elimination', {
+      eliminatedPlayerId: eliminatedPlayer.id,
+      eliminatedPlayerName: eliminatedPlayer.name,
+      tieBreakInfo: this.tieBreakInfo,
+      remainingCount,
+      isNextShowdown,
+      duration: this.settings.eliminationDuration,
+      standings: this.getStandings()
+    });
+
+    this.stateTimer = setTimeout(() => {
+      this.advancePhase();
+      if (isNextShowdown) {
+        this.status = GAME_STATES.SHOWDOWN;
+        const [p1, p2] = this.getAlivePlayers();
+        this.io.to(this.code).emit('showdown-start', {
+          player1: this.getPublicPlayer(p1),
+          player2: this.getPublicPlayer(p2)
+        });
+      }
+      this.startPreRound();
+    }, this.settings.eliminationDuration);
+  }
+
+  determineEliminatedPlayer(candidates) {
+    this.tieBreakInfo = null;
+
+    // Sort by phase score ascending (lowest first)
+    const sorted = [...candidates].sort((a, b) => {
+      const scoreA = this.phaseScores.get(a.id) || 0;
+      const scoreB = this.phaseScores.get(b.id) || 0;
+      return scoreA - scoreB;
+    });
+
+    const lowestScore = this.phaseScores.get(sorted[0].id) || 0;
+    const tied = sorted.filter(p => (this.phaseScores.get(p.id) || 0) === lowestScore);
+
+    if (tied.length === 1) {
+      return tied[0];
+    }
+
+    // Tie-break 1: lowest score on most recent round
+    const tiedSortedByRecent = [...tied].sort((a, b) => {
+      const aHistory = this.allScores.get(a.id) || [];
+      const bHistory = this.allScores.get(b.id) || [];
+      const aRecent = aHistory[aHistory.length - 1] || 0;
+      const bRecent = bHistory[bHistory.length - 1] || 0;
+      return aRecent - bRecent;
+    });
+
+    const lowestRecent = (this.allScores.get(tiedSortedByRecent[0].id) || []).slice(-1)[0] || 0;
+    const tied2 = tiedSortedByRecent.filter(p => {
+      const h = this.allScores.get(p.id) || [];
+      return (h[h.length - 1] || 0) === lowestRecent;
+    });
+
+    if (tied2.length === 1) {
+      this.tieBreakInfo = `Tie-break: Lower most recent round score (${lowestRecent})`;
+      return tied2[0];
+    }
+
+    // Tie-break 2: fewer total tokens earned
+    const tiedSortedByTokens = [...tied2].sort((a, b) => {
+      const aTokens = this.totalTokensEarned.get(a.id) || 0;
+      const bTokens = this.totalTokensEarned.get(b.id) || 0;
+      return aTokens - bTokens;
+    });
+
+    const lowestTokens = this.totalTokensEarned.get(tiedSortedByTokens[0].id) || 0;
+    const tied3 = tiedSortedByTokens.filter(p => (this.totalTokensEarned.get(p.id) || 0) === lowestTokens);
+
+    if (tied3.length === 1) {
+      this.tieBreakInfo = `Tie-break: Fewer tokens earned overall (${lowestTokens})`;
+      return tied3[0];
+    }
+
+    // Tie-break 3: server random coin flip
+    const victim = tied3[Math.floor(Math.random() * tied3.length)];
+    this.tieBreakInfo = `Tie-break: Server random coin flip landed on ${victim.name}!`;
+    return victim;
+  }
+
+  resolveWinnerBetween(p1, p2) {
+    if (!p1) return p2;
+    if (!p2) return p1;
+
+    if (p1.totalScore > p2.totalScore) return p1;
+    if (p2.totalScore > p1.totalScore) return p2;
+
+    // Tie-break for winner:
+    const p1Recent = (this.allScores.get(p1.id) || []).slice(-1)[0] || 0;
+    const p2Recent = (this.allScores.get(p2.id) || []).slice(-1)[0] || 0;
+    if (p1Recent > p2Recent) return p1;
+    if (p2Recent > p1Recent) return p2;
+
+    const p1Tokens = this.totalTokensEarned.get(p1.id) || 0;
+    const p2Tokens = this.totalTokensEarned.get(p2.id) || 0;
+    if (p1Tokens > p2Tokens) return p1;
+    if (p2Tokens > p1Tokens) return p2;
+
+    return Math.random() < 0.5 ? p1 : p2;
+  }
+
+  triggerGameOver(winner) {
+    this.status = GAME_STATES.GAME_OVER;
+    this.clearTimer();
+
+    const finalStandings = this.getFinalStandings(winner);
+
+    this.io.to(this.code).emit('game-over', {
+      winner: this.getPublicPlayer(winner),
+      finalStandings
+    });
+
+    // Auto-cleanup after 120s idle
+    this.stateTimer = setTimeout(() => {
+      this.destroy();
+    }, TIMINGS.GAME_OVER_IDLE_TIMEOUT);
+  }
+
+  playAgain(requestingPlayerId) {
+    if (requestingPlayerId !== this.hostId) {
+      throw new Error('Only host can trigger Play Again.');
+    }
+
+    this.clearTimer();
+    this.status = GAME_STATES.LOBBY;
+    this.currentPhase = 1;
+    this.currentRound = 1;
+    this.globalRound = 0;
+    this.eliminationOrder = [];
+    this.pendingGlitches.clear();
+    this.activeGlitches.clear();
+    this.ghostGlitchUsed.clear();
+
+    // Reset players
+    for (const player of this.players.values()) {
+      player.status = PLAYER_STATUS.WAITING;
+      player.glitchTokens = 0;
+      player.totalScore = 0;
+      player.activeGlitches = [];
+      this.phaseScores.set(player.id, 0);
+      this.allScores.set(player.id, []);
+      this.totalTokensEarned.set(player.id, 0);
+    }
+
+    this.io.to(this.code).emit('room-reset', {
+      players: this.getPublicPlayersState(),
+      hostId: this.hostId
+    });
+
+    this.resetLobbyIdleTimer();
+  }
+
+  // --- HELPERS ---
+
+  getAlivePlayers() {
+    return Array.from(this.players.values()).filter(p =>
+      p.status === PLAYER_STATUS.PLAYING || (p.status === PLAYER_STATUS.DISCONNECTED && !this.eliminationOrder.includes(p.id))
+    );
+  }
+
+  getStandings() {
+    return Array.from(this.players.values())
+      .map(p => ({
+        ...this.getPublicPlayer(p),
+        phaseScore: this.phaseScores.get(p.id) || 0,
+        roundScores: this.allScores.get(p.id) || [],
+        isNearElimination: false
+      }))
+      .sort((a, b) => b.phaseScore - a.phaseScore);
+  }
+
+  getFinalStandings(winner) {
+    const list = Array.from(this.players.values());
+
+    // Rank 1: winner
+    // Ranks based on survival order and score
+    return list.map(p => {
+      const isWinner = winner && p.id === winner.id;
+      let rank = 1;
+      if (!isWinner) {
+        const elimIndex = this.eliminationOrder.indexOf(p.id);
+        if (elimIndex !== -1) {
+          // Eliminated earlier = lower rank
+          rank = list.length - elimIndex;
+        } else {
+          rank = 2;
+        }
+      }
+      return {
+        rank,
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        isWinner,
+        totalScore: p.totalScore,
+        tokensEarned: this.totalTokensEarned.get(p.id) || 0,
+        roundsSurvived: (this.allScores.get(p.id) || []).length
+      };
+    }).sort((a, b) => a.rank - b.rank || b.totalScore - a.totalScore);
+  }
+
+  getPublicPlayer(p) {
+    if (!p) return null;
+    return {
+      id: p.id,
+      name: p.name,
+      color: p.color,
+      status: p.status,
+      glitchTokens: p.glitchTokens,
+      totalScore: p.totalScore,
+      isHost: p.id === this.hostId
+    };
+  }
+
+  getPublicPlayersState() {
+    return Array.from(this.players.values()).map(p => this.getPublicPlayer(p));
+  }
+
+  clearTimer() {
+    if (this.stateTimer) {
+      clearTimeout(this.stateTimer);
+      this.stateTimer = null;
+    }
+  }
+
+  resetLobbyIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      if (this.status === GAME_STATES.LOBBY) {
+        this.destroy();
+      }
+    }, TIMINGS.LOBBY_IDLE_TIMEOUT);
+  }
+
+  scheduleEmptyRoomCleanup() {
+    this.clearTimer();
+    this.idleTimer = setTimeout(() => {
+      if (this.players.size === 0) {
+        this.destroy();
+      }
+    }, TIMINGS.EMPTY_ROOM_TIMEOUT);
+  }
+
+  destroy() {
+    this.clearTimer();
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    for (const t of this.disconnectTimers.values()) clearTimeout(t);
+    this.disconnectTimers.clear();
+    if (typeof this.onDestroy === 'function') {
+      this.onDestroy(this.code);
+    }
+  }
+}
+
+module.exports = GameRoom;
