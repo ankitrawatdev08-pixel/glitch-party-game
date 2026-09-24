@@ -1,6 +1,7 @@
 // public/js/screens/landing.js
 import { sound } from '../audio.js';
 import { getStoredPlayerName, setStoredPlayerName } from '../utils.js';
+import { HowToPlayModal } from '../components/howToPlayModal.js';
 
 export class LandingScreen {
   constructor(container, { onCreateRoom, onJoinRoom }) {
@@ -64,35 +65,13 @@ export class LandingScreen {
           </button>
         </div>
 
-        <!-- How To Play Accordion -->
-        <div class="how-to-play-section">
-          <button id="how-to-play-toggle" class="how-to-play-header" aria-expanded="false">
-            <span>HOW TO PLAY</span>
-            <span class="accordion-arrow">▼</span>
+        <!-- How To Play Modal Button -->
+        <div class="landing-htp-wrap">
+          <button id="btn-how-to-play" class="btn-htp-trigger" type="button">
+            <span class="htp-btn-icon">📖</span>
+            <span class="htp-btn-text">HOW TO PLAY (RULES)</span>
+            <span class="htp-btn-arrow">→</span>
           </button>
-          <div id="how-to-play-content" class="how-to-play-content hidden">
-            <div class="rule-step">
-              <div class="step-num">1</div>
-              <div class="step-desc">
-                <strong>Simultaneous Micro-Challenges</strong>
-                <p>Everyone plays 8-second rapid micro-games at the exact same time.</p>
-              </div>
-            </div>
-            <div class="rule-step">
-              <div class="step-num">2</div>
-              <div class="step-desc">
-                <strong>Earn Glitch Tokens</strong>
-                <p>Score 50+ to earn tokens. Spend them in pre-round to flip screens, wobble displays, or fog enemies!</p>
-              </div>
-            </div>
-            <div class="rule-step">
-              <div class="step-num">3</div>
-              <div class="step-desc">
-                <strong>Survive Eliminations</strong>
-                <p>Lowest scorer after 3 rounds is eliminated to Ghost mode (1 free glitch/round). Last standing wins!</p>
-              </div>
-            </div>
-          </div>
         </div>
 
       </div>
@@ -113,9 +92,7 @@ export class LandingScreen {
     const btnCancelJoin = this.container.querySelector('#btn-cancel-join');
     const joinCodeContainer = this.container.querySelector('#join-code-container');
 
-    const htpToggle = this.container.querySelector('#how-to-play-toggle');
-    const htpContent = this.container.querySelector('#how-to-play-content');
-    const arrow = this.container.querySelector('.accordion-arrow');
+    const btnHowToPlay = this.container.querySelector('#btn-how-to-play');
 
     // Auto-uppercase room code
     codeInput.addEventListener('input', () => {
@@ -180,12 +157,11 @@ export class LandingScreen {
       this.onJoinRoom(code, name);
     });
 
-    htpToggle.addEventListener('click', () => {
-      sound.playClick();
-      const isExpanded = htpContent.classList.toggle('hidden');
-      arrow.textContent = isExpanded ? '▼' : '▲';
-      htpToggle.setAttribute('aria-expanded', (!isExpanded).toString());
-    });
+    if (btnHowToPlay) {
+      btnHowToPlay.addEventListener('click', () => {
+        HowToPlayModal.open();
+      });
+    }
   }
 
   showError(message) {

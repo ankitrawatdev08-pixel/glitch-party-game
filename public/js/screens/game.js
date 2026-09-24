@@ -63,7 +63,7 @@ export class GameScreenManager {
             ${isShowdown ? '<span class="badge-showdown">⚡ FINAL SHOWDOWN ⚡</span>' : ''}
           </div>
           <div class="preround-countdown-ring">
-            <span id="preround-countdown" class="preround-num">3</span>
+            <span id="preround-countdown" class="preround-num">${Math.ceil((data.duration || 8000) / 1000)}</span>
           </div>
         </header>
 
@@ -86,8 +86,8 @@ export class GameScreenManager {
       </div>
     `;
 
-    // 3-second visual countdown with ticks
-    let secondsLeft = Math.floor((data.duration || 3000) / 1000);
+    // Visual countdown with ticks (default 8s pre-round hold)
+    let secondsLeft = Math.ceil((data.duration || 8000) / 1000);
     const countdownEl = this.container.querySelector('#preround-countdown');
 
     sound.playTick();
@@ -514,52 +514,58 @@ export class GameScreenManager {
           </div>
         </section>
 
-        <!-- Phase Leaderboard -->
+        <!-- Phase Leaderboard (Bounded Container with Running Totals) -->
         <section class="phase-leaderboard-section">
           <div class="lb-title-row">
             <span class="lb-title">PHASE ${data.phase} STANDINGS (CUMULATIVE)</span>
-            <span class="lb-hint">Lowest cumulative score faces elimination!</span>
+            <span class="lb-hint">Lowest Phase score faces elimination</span>
           </div>
 
-          <div class="standings-list">
-            ${aliveStandings.map((p, idx) => {
-              const isDanger = p.phaseScore === minPhaseScore && aliveStandings.length > 2;
-              const isMe = p.id === this.myPlayerId;
+          <div class="standings-scroll-container">
+            <div class="standings-list">
+              ${aliveStandings.map((p, idx) => {
+                const isDanger = p.phaseScore === minPhaseScore && aliveStandings.length > 2;
+                const isMe = p.id === this.myPlayerId;
+                // Bounded phase rounds: extract rounds for current phase (max 3 rounds)
+                const phaseRoundScores = (p.roundScores || []).slice(-(data.roundNumber || 1));
+                const totalGameScore = (p.roundScores || []).reduce((acc, s) => acc + s, 0);
 
-              return `
-                <div class="standing-row ${isDanger ? 'row-danger' : ''} ${isMe ? 'row-me' : ''}">
-                  <div class="rank-col">#${idx + 1}</div>
-                  <div class="avatar-col">${generateAvatarSvg(p.color, p.id, 38)}</div>
-                  <div class="name-col">
-                    <span class="s-name">${p.name}</span>
-                    ${isMe ? '<span class="you-tag">(YOU)</span>' : ''}
-                    ${isDanger ? '<span class="danger-tag">DANGER</span>' : ''}
+                return `
+                  <div class="standing-row ${isDanger ? 'row-danger' : ''} ${isMe ? 'row-me' : ''}">
+                    <div class="rank-col">#${idx + 1}</div>
+                    <div class="avatar-col">${generateAvatarSvg(p.color, p.id, 34)}</div>
+                    <div class="name-col">
+                      <span class="s-name">${p.name}</span>
+                      ${isMe ? '<span class="you-tag">(YOU)</span>' : ''}
+                      ${isDanger ? '<span class="danger-tag">DANGER</span>' : ''}
+                    </div>
+                    <div class="scores-history-col">
+                      ${phaseRoundScores.map((s, rIndex) => `<span class="score-dot" title="Phase Round ${rIndex + 1}">R${rIndex + 1}:${s}</span>`).join('')}
+                    </div>
+                    <div class="phase-total-col">
+                      <div class="phase-pts-highlight"><strong>${p.phaseScore}</strong> pts</div>
+                      <div class="match-total-sub" title="Cumulative score">Tot: ${totalGameScore}</div>
+                    </div>
                   </div>
-                  <div class="scores-history-col">
-                    ${(p.roundScores || []).map(s => `<span class="score-dot">${s}</span>`).join('')}
+                `;
+              }).join('')}
+            </div>
+
+            ${ghostStandings.length > 0 ? `
+              <div class="ghosts-section-divider">
+                <span>👻 GHOSTS (${ghostStandings.length})</span>
+              </div>
+              <div class="ghosts-list">
+                ${ghostStandings.map(g => `
+                  <div class="ghost-row">
+                    <div class="avatar-col">${generateAvatarSvg(g.color, g.id, 28)}</div>
+                    <span class="ghost-name">${g.name}</span>
+                    <span class="ghost-status">Haunting</span>
                   </div>
-                  <div class="phase-total-col">
-                    <strong>${p.phaseScore}</strong> pts
-                  </div>
-                </div>
-              `;
-            }).join('')}
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
-
-          ${ghostStandings.length > 0 ? `
-            <div class="ghosts-section-divider">
-              <span>👻 GHOSTS</span>
-            </div>
-            <div class="ghosts-list">
-              ${ghostStandings.map(g => `
-                <div class="ghost-row">
-                  <div class="avatar-col">${generateAvatarSvg(g.color, g.id, 32)}</div>
-                  <span class="ghost-name">${g.name}</span>
-                  <span class="ghost-status">Haunting</span>
-                </div>
-              `).join('')}
-            </div>
-          ` : ''}
         </section>
 
         <footer class="postround-footer">

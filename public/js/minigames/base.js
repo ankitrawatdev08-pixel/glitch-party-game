@@ -48,6 +48,7 @@ export class BaseMiniGame {
     this.canvas.addEventListener('pointerdown', this.handlePointerDown);
     this.canvas.addEventListener('pointermove', this.handlePointerMove);
     this.canvas.addEventListener('pointerup', this.handlePointerUp);
+    this.canvas.addEventListener('pointercancel', this.handlePointerUp);
 
     this.initGame(config);
     this.loop(performance.now());
@@ -62,6 +63,7 @@ export class BaseMiniGame {
     this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
     this.canvas.removeEventListener('pointermove', this.handlePointerMove);
     this.canvas.removeEventListener('pointerup', this.handlePointerUp);
+    this.canvas.removeEventListener('pointercancel', this.handlePointerUp);
     this.cleanupGame();
   }
 

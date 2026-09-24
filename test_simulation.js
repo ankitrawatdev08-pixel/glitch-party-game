@@ -365,8 +365,8 @@ async function runSocketIntegrationTest() {
 
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      reject(new Error('Simulation timed out after 120s'));
-    }, 120000);
+      reject(new Error('Simulation timed out after 200s'));
+    }, 200000);
 
     let preRoundRejectTested = false;
     let midRoundGlitchSent = false;

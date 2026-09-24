@@ -2,6 +2,7 @@
 import { sound } from '../audio.js';
 import { generateAvatarSvg } from '../avatar.js';
 import { copyToClipboard } from '../utils.js';
+import { HowToPlayModal } from '../components/howToPlayModal.js';
 
 export class LobbyScreen {
   constructor(container, { onStartGame, onLeaveRoom }) {
@@ -37,6 +38,12 @@ export class LobbyScreen {
             <div id="copy-tooltip" class="copy-tooltip">COPIED!</div>
           </div>
           <p class="lobby-subtitle">Share this 4-letter code with your friends</p>
+          <div class="lobby-htp-wrap">
+            <button id="btn-lobby-how-to-play" class="btn-htp-trigger btn-htp-compact" type="button">
+              <span class="htp-btn-icon">📖</span>
+              <span class="htp-btn-text">HOW TO PLAY (RULES)</span>
+            </button>
+          </div>
         </header>
 
         <section class="player-roster-section">
@@ -103,6 +110,13 @@ export class LobbyScreen {
     const copyTooltip = this.container.querySelector('#copy-tooltip');
     const btnStart = this.container.querySelector('#btn-start-game');
     const btnLeave = this.container.querySelector('#btn-leave-room');
+    const btnHtp = this.container.querySelector('#btn-lobby-how-to-play');
+
+    if (btnHtp) {
+      btnHtp.addEventListener('click', () => {
+        HowToPlayModal.open();
+      });
+    }
 
     if (copyBtn) {
       copyBtn.addEventListener('click', async () => {

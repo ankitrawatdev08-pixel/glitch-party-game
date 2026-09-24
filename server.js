@@ -18,6 +18,11 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
+// If running in Render environment, ensure NODE_ENV defaults to production if unset
+if (process.env.RENDER && !process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production';
+}
+
 // Serve static assets from public/ (strictly production assets: index.html, css, js)
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -26,9 +31,15 @@ if (process.env.NODE_ENV !== 'production') {
   app.use('/tests', express.static(path.join(__dirname, 'tests')));
 }
 
-// Health check endpoint
+// Health check endpoint (reports exact environment and uptime for verification audits)
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    nodeEnv: process.env.NODE_ENV || 'development',
+    isProduction: process.env.NODE_ENV === 'production',
+    isRender: !!process.env.RENDER
+  });
 });
 
 // Fallback to index.html for client routing
@@ -214,5 +225,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`GLITCH server listening on http://${HOST}:${PORT}`);
+  console.log(`GLITCH server listening on http://${HOST}:${PORT} [NODE_ENV=${process.env.NODE_ENV || 'development'}]`);
 });
