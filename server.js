@@ -18,15 +18,20 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
-// Serve static assets from public/
+// Serve static assets from public/ (strictly production assets: index.html, css, js)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Gated dev/test harness route (strictly excluded from production)
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/tests', express.static(path.join(__dirname, 'tests')));
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
 
-// Fallback to index.html
+// Fallback to index.html for client routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -138,37 +143,38 @@ io.on('connection', (socket) => {
     }
   });
 
-  // TEST HELPER: GRANT TOKENS (For automated stress test simulation)
-  socket.on('test-grant-tokens', ({ count }) => {
-    try {
-      const binding = roomManager.socketToRoom.get(socket.id);
-      if (binding) {
-        const room = roomManager.getRoom(binding.roomCode);
-        if (room) {
-          const player = room.players.get(binding.playerId);
-          if (player) {
-            player.glitchTokens = count || 2;
+  // TEST HELPERS (Only active during non-production test simulations)
+  if (process.env.NODE_ENV !== 'production') {
+    socket.on('test-grant-tokens', ({ count }) => {
+      try {
+        const binding = roomManager.socketToRoom.get(socket.id);
+        if (binding) {
+          const room = roomManager.getRoom(binding.roomCode);
+          if (room) {
+            const player = room.players.get(binding.playerId);
+            if (player) {
+              player.glitchTokens = count || 2;
+            }
           }
         }
-      }
-    } catch (_) {}
-  });
+      } catch (_) {}
+    });
 
-  // TEST HELPER: FAST TIMINGS (For rapid integration tests)
-  socket.on('test-fast-timings', (timings) => {
-    try {
-      const binding = roomManager.socketToRoom.get(socket.id);
-      if (binding) {
-        const room = roomManager.getRoom(binding.roomCode);
-        if (room && timings) {
-          if (timings.roundDuration !== undefined) room.settings.roundDuration = timings.roundDuration;
-          if (timings.preRoundDuration !== undefined) room.settings.preRoundDuration = timings.preRoundDuration;
-          if (timings.postRoundDuration !== undefined) room.settings.postRoundDuration = timings.postRoundDuration;
-          if (timings.eliminationDuration !== undefined) room.settings.eliminationDuration = timings.eliminationDuration;
+    socket.on('test-fast-timings', (timings) => {
+      try {
+        const binding = roomManager.socketToRoom.get(socket.id);
+        if (binding) {
+          const room = roomManager.getRoom(binding.roomCode);
+          if (room && timings) {
+            if (timings.roundDuration !== undefined) room.settings.roundDuration = timings.roundDuration;
+            if (timings.preRoundDuration !== undefined) room.settings.preRoundDuration = timings.preRoundDuration;
+            if (timings.postRoundDuration !== undefined) room.settings.postRoundDuration = timings.postRoundDuration;
+            if (timings.eliminationDuration !== undefined) room.settings.eliminationDuration = timings.eliminationDuration;
+          }
         }
-      }
-    } catch (_) {}
-  });
+      } catch (_) {}
+    });
+  }
 
   // PLAY AGAIN
   socket.on('play-again', () => {
