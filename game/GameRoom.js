@@ -492,9 +492,11 @@ class GameRoom {
       throw new Error('All glitch effects are currently active on this target.');
     }
 
-    // Select randomized effect strictly from eligible pool
+    // Select randomized effect strictly from eligible pool.
+    // Explicit overrides are strictly disabled in production (dev/test harnesses only).
+    const allowOverride = (process.env.NODE_ENV !== 'production');
     let chosenGlitch;
-    if (optionalGlitchType && eligiblePool.includes(optionalGlitchType)) {
+    if (allowOverride && optionalGlitchType && eligiblePool.includes(optionalGlitchType)) {
       chosenGlitch = optionalGlitchType;
     } else {
       chosenGlitch = eligiblePool[Math.floor(Math.random() * eligiblePool.length)];

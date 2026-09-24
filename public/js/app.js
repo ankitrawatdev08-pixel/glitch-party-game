@@ -51,7 +51,7 @@ class GlitchApp {
     });
 
     this.gameScreen = new GameScreenManager(this.screenContainer, {
-      onSendGlitch: (targetPlayerId, glitchType) => this.socket.emit('send-glitch', { targetPlayerId, glitchType }),
+      onSendGlitch: (targetPlayerId) => this.socket.emit('send-glitch', { targetPlayerId }),
       onSubmitScore: (roundData) => this.socket.emit('submit-score', { roundData })
     });
 

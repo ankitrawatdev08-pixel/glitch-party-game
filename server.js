@@ -137,7 +137,10 @@ io.on('connection', (socket) => {
       const room = roomManager.getRoom(binding.roomCode);
       if (!room) throw new Error('Room not found.');
 
-      room.sendGlitch(binding.playerId, targetPlayerId, glitchType);
+      // Client-supplied glitchType override is strictly ignored in production.
+      // The server ALWAYS selects the effect server-side from the eligible pool.
+      const overrideType = (process.env.NODE_ENV !== 'production') ? glitchType : undefined;
+      room.sendGlitch(binding.playerId, targetPlayerId, overrideType);
     } catch (err) {
       socket.emit('error', { message: err.message, targetPlayerId, action: 'send-glitch' });
     }
