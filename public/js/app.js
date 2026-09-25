@@ -47,7 +47,9 @@ class GlitchApp {
 
     this.lobbyScreen = new LobbyScreen(this.screenContainer, {
       onStartGame: () => this.socket.emit('start-game'),
-      onLeaveRoom: () => this.leaveRoom()
+      onLeaveRoom: () => this.leaveRoom(),
+      onAddBot: () => this.socket.emit('add-bot'),
+      onRemoveBot: (botId) => this.socket.emit('remove-bot', { botId })
     });
 
     this.gameScreen = new GameScreenManager(this.screenContainer, {
@@ -209,12 +211,14 @@ class GlitchApp {
 
     // GLITCH INCOMING
     this.socket.on('glitch-incoming', (data) => {
-      this.gameScreen.notifyGlitchIncoming(data.glitchType, data.fromPlayerName, data.remainingOwedMs, data.isGhost);
+      const fromName = data.fromPlayerName || data.attackerName || 'Opponent';
+      this.gameScreen.notifyGlitchIncoming(data.glitchType, fromName, data.remainingOwedMs, data.isGhost);
     });
 
     // GLITCH CONFIRMED
     this.socket.on('glitch-confirmed', (data) => {
-      this.gameScreen.notifyGlitchConfirmed(data.targetPlayerId, data.targetPlayerName, data.glitchType, data.remainingTokens, data.isGhost);
+      const remainingTokens = data.remainingTokens !== undefined ? data.remainingTokens : data.tokensLeft;
+      this.gameScreen.notifyGlitchConfirmed(data.targetPlayerId, data.targetPlayerName, data.glitchType, remainingTokens, data.isGhost);
     });
 
     // ACTIVE GLITCHES UPDATED

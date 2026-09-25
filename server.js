@@ -124,6 +124,40 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ADD BOT (Host only, lobby only)
+  socket.on('add-bot', () => {
+    try {
+      const binding = roomManager.socketToRoom.get(socket.id);
+      if (!binding) throw new Error('Not connected to a room.');
+
+      const room = roomManager.getRoom(binding.roomCode);
+      if (!room) throw new Error('Room not found.');
+
+      const bot = room.addBot(binding.playerId);
+      io.to(room.code).emit('player-joined', {
+        player: room.getPublicPlayer(bot)
+      });
+    } catch (err) {
+      socket.emit('error', { message: err.message });
+    }
+  });
+
+  // REMOVE BOT (Host only, lobby only)
+  socket.on('remove-bot', ({ botId }) => {
+    try {
+      const binding = roomManager.socketToRoom.get(socket.id);
+      if (!binding) throw new Error('Not connected to a room.');
+
+      const room = roomManager.getRoom(binding.roomCode);
+      if (!room) throw new Error('Room not found.');
+
+      room.removeBot(botId, binding.playerId);
+      // removeBot calls removePlayer which already emits 'player-left'
+    } catch (err) {
+      socket.emit('error', { message: err.message });
+    }
+  });
+
   // SUBMIT SCORE
   socket.on('submit-score', ({ roundData }) => {
     try {
@@ -159,15 +193,21 @@ io.on('connection', (socket) => {
 
   // TEST HELPERS (Only active during non-production test simulations)
   if (process.env.NODE_ENV !== 'production') {
-    socket.on('test-grant-tokens', ({ count }) => {
+    socket.on('test-grant-tokens', ({ count, all }) => {
       try {
         const binding = roomManager.socketToRoom.get(socket.id);
         if (binding) {
           const room = roomManager.getRoom(binding.roomCode);
           if (room) {
-            const player = room.players.get(binding.playerId);
-            if (player) {
-              player.glitchTokens = count || 2;
+            if (all) {
+              for (const player of room.players.values()) {
+                player.glitchTokens = count || 2;
+              }
+            } else {
+              const player = room.players.get(binding.playerId);
+              if (player) {
+                player.glitchTokens = count || 2;
+              }
             }
           }
         }

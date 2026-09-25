@@ -10,6 +10,8 @@ const {
 } = require('./constants');
 const MiniGameEngine = require('./MiniGameEngine');
 
+const BOT_NAMES = ['Sparky', 'Zapper', 'Pixel', 'Bit', 'Byte', 'Neon', 'Volt', 'Circuit', 'Dash', 'Blip'];
+
 class GameRoom {
   constructor(code, hostPlayer, io, onDestroy) {
     this.code = code;
@@ -48,6 +50,8 @@ class GameRoom {
     this.attackerGlitchedTargetsThisRound = new Map();
     this.ghostGlitchUsed = new Set(); // ghost playerIds who used their free glitch this round
     this.activeGlitchTimeouts = []; // timeouts for expiring carried-over or mid-round glitches
+    this.botIds = new Set(); // IDs of AI bot players
+    this.botActionTimeouts = []; // timeouts for bot score/glitch scheduling
 
     // Scoring & History
     this.phaseScores = new Map(); // playerId -> number
@@ -120,7 +124,7 @@ class GameRoom {
 
     // Host migration
     if (this.hostId === playerId && this.players.size > 0) {
-      this.hostId = this.playerOrder[0];
+      this.hostId = this.playerOrder.find(id => !this.botIds.has(id)) || this.playerOrder[0];
       this.io.to(this.code).emit('host-changed', { newHostId: this.hostId });
     }
 
@@ -132,6 +136,47 @@ class GameRoom {
     } else if (this.status !== GAME_STATES.LOBBY && this.status !== GAME_STATES.GAME_OVER) {
       this.checkRemainingPlayers();
     }
+  }
+
+  // --- BOT MANAGEMENT ---
+
+  addBot(requestingPlayerId) {
+    if (requestingPlayerId !== this.hostId) {
+      throw new Error('Only the host can add bots.');
+    }
+    if (this.status !== GAME_STATES.LOBBY) {
+      throw new Error('Can only add bots in lobby.');
+    }
+    if (this.players.size >= 8) {
+      throw new Error('Room is full (8/8 players).');
+    }
+
+    const botId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const baseName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+
+    const botData = {
+      id: botId,
+      name: `\u{1F916} ${baseName}`,
+      socketId: null
+    };
+
+    const bot = this.addPlayer(botData);
+    this.botIds.add(botId);
+    return bot;
+  }
+
+  removeBot(botId, requestingPlayerId) {
+    if (requestingPlayerId !== this.hostId) {
+      throw new Error('Only the host can remove bots.');
+    }
+    if (this.status !== GAME_STATES.LOBBY) {
+      throw new Error('Can only remove bots in lobby.');
+    }
+    if (!this.botIds.has(botId)) {
+      throw new Error('Not a bot player.');
+    }
+    this.botIds.delete(botId);
+    this.removePlayer(botId);
   }
 
   handleDisconnect(playerId) {
@@ -158,7 +203,7 @@ class GameRoom {
     if (this.hostId === playerId) {
       const nextActive = this.playerOrder.find(id => {
         const p = this.players.get(id);
-        return p && p.status !== PLAYER_STATUS.DISCONNECTED;
+        return p && p.status !== PLAYER_STATUS.DISCONNECTED && !this.botIds.has(id);
       });
       if (nextActive) {
         this.hostId = nextActive;
@@ -419,6 +464,108 @@ class GameRoom {
     this.stateTimer = setTimeout(() => {
       this.endRound();
     }, this.settings.roundDuration);
+
+    // Schedule bot actions (score submission & sabotage) with randomized delays
+    this.scheduleBotActions();
+  }
+
+  // --- BOT ROUND ACTIONS ---
+
+  scheduleBotActions() {
+    for (const t of this.botActionTimeouts) clearTimeout(t);
+    this.botActionTimeouts = [];
+    this.scheduledBotDelays = { scoreDelays: [], glitchDelays: [] };
+
+    const isShowdown = this.isCurrentPhaseShowdown();
+
+    const duration = this.settings.roundDuration;
+
+    for (const botId of this.botIds) {
+      const bot = this.players.get(botId);
+      if (!bot) continue;
+
+      const isGhost = bot.status === PLAYER_STATUS.ELIMINATED;
+
+      // Living bots: submit scores after a randomized delay (proportionate to roundDuration)
+      if (!isGhost) {
+        const minScoreDelay = Math.min(1500, Math.max(300, duration * 0.2));
+        const maxScoreDelay = Math.min(5500, Math.max(800, duration * 0.7));
+        const scoreDelay = minScoreDelay + Math.random() * (maxScoreDelay - minScoreDelay);
+        this.scheduledBotDelays.scoreDelays.push({ botId, delayMs: Math.round(scoreDelay) });
+        const t = setTimeout(() => {
+          if (this.status !== GAME_STATES.PLAYING) return;
+          const rawData = this.generateBotScoreData(this.currentMiniGame);
+          this.submitScore(botId, rawData);
+        }, scoreDelay);
+        this.botActionTimeouts.push(t);
+      }
+
+      // Sabotage: living bots with tokens, or ghost bots outside Showdown
+      let canGlitch = false;
+      if (isGhost) {
+        canGlitch = !isShowdown && !this.ghostGlitchUsed.has(botId);
+      } else {
+        canGlitch = bot.glitchTokens >= TOKEN_RULES.COST_PER_GLITCH;
+      }
+
+      if (canGlitch) {
+        const minGlitchDelay = Math.min(2000, Math.max(400, duration * 0.25));
+        const maxGlitchDelay = Math.min(6000, Math.max(1000, duration * 0.75));
+        const glitchDelay = minGlitchDelay + Math.random() * (maxGlitchDelay - minGlitchDelay);
+        this.scheduledBotDelays.glitchDelays.push({ botId, delayMs: Math.round(glitchDelay) });
+        const t = setTimeout(() => {
+          this.executeBotGlitch(botId);
+        }, glitchDelay);
+        this.botActionTimeouts.push(t);
+      }
+    }
+  }
+
+  chooseBotTarget(botId) {
+    const alivePlayers = this.getAlivePlayers().filter(p => p.id !== botId);
+    if (alivePlayers.length === 0) return null;
+
+    // Pick target: 70% highest scorer, 30% random
+    if (Math.random() < 0.7) {
+      const sorted = [...alivePlayers].sort((a, b) => b.totalScore - a.totalScore);
+      return sorted[0];
+    } else {
+      return alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+    }
+  }
+
+  executeBotGlitch(botId) {
+    if (this.status !== GAME_STATES.PLAYING) return;
+
+    const target = this.chooseBotTarget(botId);
+    if (!target) return;
+
+    try {
+      this.sendGlitch(botId, target.id);
+    } catch (e) {
+      // Silently accept rejection — bots play by the same rules as humans
+    }
+  }
+
+  generateBotScoreData(miniGameId) {
+    const rand = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+
+    switch (miniGameId) {
+      case 'targetTap':
+        return { hits: rand(3, 6), totalTargets: 8 };
+      case 'colorMatch':
+        return { correct: rand(4, 7), wrong: rand(2, 4) };
+      case 'sequenceMemory':
+        return { correctCells: rand(2, 3), totalCells: 4 };
+      case 'quickMath':
+        return { correct: rand(3, 5), wrong: rand(2, 4) };
+      case 'oddOneOut':
+        return { correct: rand(4, 6), wrong: rand(2, 3) };
+      case 'tracePath':
+        return { correctWaypoints: rand(3, 4), totalWaypoints: 5 };
+      default:
+        return { hits: rand(4, 6), totalTargets: 8 };
+    }
   }
 
   submitScore(playerId, rawData) {
@@ -538,6 +685,7 @@ class GameRoom {
         targetPlayerName: target.name,
         glitchType: chosenGlitch,
         remainingTokens: sender.glitchTokens,
+        tokensLeft: sender.glitchTokens,
         isGhost
       });
     }
@@ -546,6 +694,7 @@ class GameRoom {
       this.io.to(target.socketId).emit('glitch-incoming', {
         glitchType: chosenGlitch,
         fromPlayerName: sender.name,
+        attackerName: sender.name,
         remainingOwedMs,
         isGhost
       });
@@ -567,6 +716,10 @@ class GameRoom {
       clearTimeout(t);
     }
     this.activeGlitchTimeouts = [];
+    for (const t of this.botActionTimeouts) {
+      clearTimeout(t);
+    }
+    this.botActionTimeouts = [];
 
     // Check which active glitches have carryover owed (Section 6)
     this.carriedOverGlitches.clear();
@@ -841,6 +994,8 @@ class GameRoom {
     this.attackerGlitchedTargetsThisRound.clear();
     for (const t of this.activeGlitchTimeouts) clearTimeout(t);
     this.activeGlitchTimeouts = [];
+    for (const t of this.botActionTimeouts) clearTimeout(t);
+    this.botActionTimeouts = [];
 
     // Reset players
     for (const player of this.players.values()) {
@@ -919,7 +1074,8 @@ class GameRoom {
       status: p.status,
       glitchTokens: p.glitchTokens,
       totalScore: p.totalScore,
-      isHost: p.id === this.hostId
+      isHost: p.id === this.hostId,
+      isBot: this.botIds.has(p.id)
     };
   }
 
@@ -955,6 +1111,8 @@ class GameRoom {
   destroy() {
     this.clearTimer();
     if (this.idleTimer) clearTimeout(this.idleTimer);
+    for (const t of this.botActionTimeouts) clearTimeout(t);
+    this.botActionTimeouts = [];
     for (const t of this.disconnectTimers.values()) clearTimeout(t);
     this.disconnectTimers.clear();
     if (typeof this.onDestroy === 'function') {

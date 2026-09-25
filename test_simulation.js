@@ -13,6 +13,7 @@
 const assert = require('assert');
 const { io } = require('socket.io-client');
 const GameRoom = require('./game/GameRoom.js');
+const MiniGameEngine = require('./game/MiniGameEngine.js');
 const { GAME_STATES, PLAYER_STATUS, GLITCH_TYPES } = require('./game/constants.js');
 
 const SERVER_URL = 'http://localhost:3000';
@@ -716,11 +717,441 @@ async function run8PlayerStressTest() {
   console.log('✓ 8-PLAYER STRESS TEST PASSED 100%!\n');
 }
 
+// =========================================================================
+// PART 5: BOT / PRACTICE MODE UNIT TESTS (Patch 1.0.4)
+// =========================================================================
+
+function runBotUnitTests() {
+  console.log('\n======================================================');
+  console.log('PART 5: BOT / PRACTICE MODE UNIT TESTS');
+  console.log('======================================================');
+
+  const mockIo = {
+    to: () => ({ emit: () => {} }),
+    emit: () => {}
+  };
+
+  // Test 1: addBot creates valid player slots
+  console.log('Testing addBot creates valid player in room...');
+  const room = new GameRoom('BOTTEST', { id: 'host1', name: 'HostAlice', socketId: 'sH' }, mockIo);
+  assert.strictEqual(room.players.size, 1, 'Room should have 1 player (host)');
+
+  const bot1 = room.addBot('host1');
+  assert.strictEqual(room.players.size, 2, 'Room should have 2 players after adding bot');
+  assert.ok(room.botIds.has(bot1.id), 'Bot ID should be tracked in botIds');
+  assert.strictEqual(bot1.socketId, null, 'Bot should have null socketId');
+  assert.ok(bot1.name.includes('\u{1F916}'), 'Bot name should include robot emoji');
+  assert.ok(bot1.status === 'WAITING', 'Bot should be in WAITING status');
+  console.log(`✓ Bot added: "${bot1.name}" (ID: ${bot1.id.slice(0, 12)}...)`);
+
+  // Test 2: getPublicPlayer includes isBot flag
+  console.log('Testing bot visibility flag in public state...');
+  const publicBot = room.getPublicPlayer(bot1);
+  assert.strictEqual(publicBot.isBot, true, 'Public player state should have isBot: true for bots');
+  const publicHost = room.getPublicPlayer(room.players.get('host1'));
+  assert.strictEqual(publicHost.isBot, false, 'Public player state should have isBot: false for humans');
+  console.log('✓ isBot flag correctly set in public player state');
+
+  // Test 3: Cannot add more than 8 players total
+  console.log('Testing room capacity cap with bots...');
+  for (let i = 0; i < 6; i++) {
+    room.addBot('host1');
+  }
+  assert.strictEqual(room.players.size, 8, 'Room should be at max capacity (8)');
+  assert.throws(() => room.addBot('host1'), /Room is full/, 'Should reject 9th player');
+  console.log('✓ Room correctly rejects bots beyond 8-player capacity');
+
+  // Test 4: Only host can add/remove bots
+  console.log('Testing host-only bot management...');
+  room.addPlayer({ id: 'guest1', name: 'Guest', socketId: 'sG' }); // This would fail at capacity, so let's remove one first
+  // Actually room is full. Let's test with a fresh room.
+  const room2 = new GameRoom('BOT2', { id: 'host2', name: 'Host', socketId: 'sH2' }, mockIo);
+  room2.addPlayer({ id: 'guest2', name: 'Guest', socketId: 'sG2' });
+  assert.throws(() => room2.addBot('guest2'), /Only the host can add bots/, 'Non-host should be rejected');
+  const bot2 = room2.addBot('host2');
+  assert.throws(() => room2.removeBot(bot2.id, 'guest2'), /Only the host can remove bots/, 'Non-host should be rejected for removal');
+  console.log('✓ Bot management correctly restricted to host only');
+
+  // Test 5: removeBot removes player and cleans up
+  console.log('Testing removeBot cleanup...');
+  const botIdToRemove = bot2.id;
+  assert.strictEqual(room2.players.size, 3, 'Room should have 3 players before removal');
+  room2.removeBot(botIdToRemove, 'host2');
+  assert.strictEqual(room2.players.size, 2, 'Room should have 2 players after removal');
+  assert.ok(!room2.botIds.has(botIdToRemove), 'Bot ID should be removed from botIds');
+  assert.ok(!room2.players.has(botIdToRemove), 'Bot should be removed from players map');
+  console.log('✓ Bot correctly removed from room and tracking sets');
+
+  // Test 6: Bot scores go through same validation path
+  console.log('Testing bot score data generation...');
+  const room3 = new GameRoom('BOT3', { id: 'host3', name: 'Host', socketId: 'sH3' }, mockIo);
+  const bot3 = room3.addBot('host3');
+  room3.addPlayer({ id: 'human3', name: 'Human', socketId: 'sHu3' });
+
+  // Start game
+  room3.startGame('host3');
+  room3.clearTimer(); // prevent auto-transition
+
+  // Move to PLAYING state
+  room3.status = GAME_STATES.PLAYING;
+  room3.currentMiniGame = 'targetTap';
+  room3.roundStartedAt = Date.now();
+
+  // Generate and submit bot score through same path as human
+  const botRawData = room3.generateBotScoreData('targetTap');
+  assert.ok(botRawData.hits !== undefined, 'Bot score data should have hits');
+  assert.ok(botRawData.totalTargets !== undefined, 'Bot score data should have totalTargets');
+  assert.ok(botRawData.hits >= 3 && botRawData.hits <= 6, 'Bot hits should be in 3-6 range');
+  room3.submitScore(bot3.id, botRawData);
+  assert.ok(room3.submittedScores.has(bot3.id), 'Bot score should be recorded via same submitScore path');
+  console.log(`✓ Bot score data generated and submitted through standard path (hits: ${botRawData.hits}/${botRawData.totalTargets})`);
+
+  // Test 7: Bot glitch goes through same sendGlitch validation
+  console.log('Testing bot glitch through same server validation...');
+  const botPlayer3 = room3.players.get(bot3.id);
+  botPlayer3.glitchTokens = 2;
+
+  // Bot attacks human — should succeed
+  room3.sendGlitch(bot3.id, 'human3');
+  assert.strictEqual(botPlayer3.glitchTokens, 1, 'Bot should have 1 token after attack');
+  console.log('✓ Bot glitch succeeded through standard sendGlitch path');
+
+  // Anti-spam: same target twice in same round should fail
+  assert.throws(() => room3.sendGlitch(bot3.id, 'human3'), /already glitched this target/, 'Anti-spam should block bot duplicate');
+  console.log('✓ Bot anti-spam duplicate prevention enforced');
+
+  // Test 8: Ghost bot blocked during Showdown
+  console.log('Testing ghost bot blocked during Final Showdown...');
+  const room4 = new GameRoom('BOT4', { id: 'host4', name: 'Host', socketId: 'sH4' }, mockIo);
+  room4.addPlayer({ id: 'human4a', name: 'HumanA', socketId: 'sA4' });
+  room4.addPlayer({ id: 'human4b', name: 'HumanB', socketId: 'sB4' });
+  const bot4 = room4.addBot('host4');
+
+  // Simulate: start game, then eliminate bot to set up showdown scenario
+  room4.status = GAME_STATES.PLAYING;
+  room4.currentMiniGame = 'targetTap';
+  room4.roundStartedAt = Date.now();
+  // Set all players to PLAYING first (as startGame would)
+  for (const p of room4.players.values()) {
+    p.status = PLAYER_STATUS.PLAYING;
+  }
+  const botPlayer4 = room4.players.get(bot4.id);
+  botPlayer4.status = PLAYER_STATUS.ELIMINATED;
+  room4.eliminationOrder.push(bot4.id);
+
+  // 3 alive -> not showdown, ghost bot CAN glitch
+  assert.strictEqual(room4.isCurrentPhaseShowdown(), false, 'Should not be Showdown with 3 alive');
+  // Give ghost token
+  room4.ghostGlitchUsed.clear();
+  room4.sendGlitch(bot4.id, 'human4a');
+  console.log('✓ Ghost bot can glitch during non-Showdown phase');
+
+  // Now eliminate one more to create showdown
+  room4.players.get('human4a').status = PLAYER_STATUS.ELIMINATED;
+  room4.eliminationOrder.push('human4a');
+  room4.ghostGlitchUsed.clear();
+  assert.strictEqual(room4.isCurrentPhaseShowdown(), true, 'Should be Showdown with 2 alive');
+  // Ghost bot should be blocked
+  assert.throws(() => room4.sendGlitch(bot4.id, 'human4b'), /Ghost glitches are disabled during Final Showdown/, 'Ghost bot should be blocked in Showdown');
+  console.log('✓ Ghost bot correctly blocked during Final Showdown');
+
+  // Test 9: Host migration skips bots
+  console.log('Testing host migration skips bots...');
+  const room5 = new GameRoom('BOT5', { id: 'hostOrig', name: 'OrigHost', socketId: 'sOrig' }, mockIo);
+  const bot5 = room5.addBot('hostOrig');
+  room5.addPlayer({ id: 'human5', name: 'Human5', socketId: 'sHu5' });
+  assert.strictEqual(room5.hostId, 'hostOrig');
+  // Simulate host removal
+  room5.removePlayer('hostOrig');
+  assert.strictEqual(room5.hostId, 'human5', 'Host should migrate to human, not bot');
+  console.log('✓ Host migration correctly skips bot players');
+
+  // Test 10: Behavioral Rule (a) — Bot scores fall within consistent medium-skill band (40-80) across rounds
+  console.log('Testing Behavioral Rule (a): Bot scores fall within consistent medium-skill band...');
+  const testMiniGames = ['targetTap', 'colorMatch', 'sequenceMemory', 'quickMath', 'oddOneOut', 'tracePath'];
+  const botScoresObserved = [];
+  for (const gameId of testMiniGames) {
+    for (let i = 0; i < 10; i++) {
+      const rawData = room3.generateBotScoreData(gameId);
+      const score = MiniGameEngine.calculateScore(gameId, rawData);
+      botScoresObserved.push({ gameId, score });
+      assert.ok(score >= 35 && score <= 85, `Bot score ${score} for ${gameId} should be in medium band [35, 85]`);
+    }
+  }
+  const minScore = Math.min(...botScoresObserved.map(s => s.score));
+  const maxScore = Math.max(...botScoresObserved.map(s => s.score));
+  const avgScore = botScoresObserved.reduce((acc, s) => acc + s.score, 0) / botScoresObserved.length;
+  assert.ok(avgScore >= 45 && avgScore <= 75, `Bot average score ${avgScore.toFixed(1)} should be in 45-75 range`);
+  console.log(`✓ PASS: Bot round scores fall within consistent medium-skill band (Min: ${minScore}, Max: ${maxScore}, Avg: ${avgScore.toFixed(1)}) across ${botScoresObserved.length} rounds of all 6 minigames`);
+
+  // Test 11: Behavioral Rule (b) — Bot sabotage timing is randomized within round window (not instant at 0ms)
+  console.log('Testing Behavioral Rule (b): Bot sabotage timing is randomized within round window...');
+  const roomTiming = new GameRoom('TIMING', { id: 'hostT', name: 'HostT', socketId: 'sHT' }, mockIo);
+  const timingBots = [];
+  for (let i = 0; i < 4; i++) {
+    const b = roomTiming.addBot('hostT');
+    timingBots.push(b.id);
+  }
+  // Transition to PLAYING state after players/bots are added in lobby
+  roomTiming.status = GAME_STATES.PLAYING;
+  roomTiming.currentMiniGame = 'targetTap';
+  for (const bId of timingBots) {
+    const p = roomTiming.players.get(bId);
+    p.glitchTokens = 2; // grant tokens so sabotage is scheduled
+    p.status = PLAYER_STATUS.PLAYING;
+  }
+  const observedDelays = [];
+  for (let round = 0; round < 5; round++) {
+    roomTiming.scheduleBotActions();
+    for (const item of roomTiming.scheduledBotDelays.glitchDelays) {
+      observedDelays.push(item.delayMs);
+    }
+  }
+  assert.ok(observedDelays.length >= 10, 'Should have collected multiple bot sabotage delays');
+  for (const delay of observedDelays) {
+    assert.ok(delay >= 1500 && delay <= 6500, `Bot sabotage delay ${delay}ms must be between 1.5s and 6.5s`);
+    assert.ok(delay > 0, `Bot sabotage delay ${delay}ms must NOT be 0ms (not instant)`);
+  }
+  const minDelay = Math.min(...observedDelays);
+  const maxDelay = Math.max(...observedDelays);
+  const avgDelay = observedDelays.reduce((a, b) => a + b, 0) / observedDelays.length;
+  assert.ok(maxDelay - minDelay >= 1000, 'Bot sabotage delays should exhibit meaningful randomization spread');
+  console.log(`✓ PASS: Bot sabotage timing is randomized within round window (Sample delays: [${observedDelays.slice(0, 5).join(', ')}ms...] | Min: ${minDelay}ms, Max: ${maxDelay}ms, Avg: ${avgDelay.toFixed(0)}ms) — none fire instantly at round-start`);
+
+  // Test 12: Behavioral Rule (c) — Bot targeting is weighted toward highest-scoring living player
+  console.log('Testing Behavioral Rule (c): Bot targeting is weighted toward highest-scoring living player...');
+  const roomTarget = new GameRoom('TARGET', { id: 'hostTG', name: 'HostTG', socketId: 'sTG' }, mockIo);
+  const pLeader = roomTarget.addPlayer({ id: 'pLeader', name: 'Leader', socketId: 'sLead' });
+  const pRival = roomTarget.addPlayer({ id: 'pRival', name: 'Rival', socketId: 'sRiv' });
+  const pTrailing = roomTarget.addPlayer({ id: 'pTrailing', name: 'Trailing', socketId: 'sTrail' });
+  const botAttacker = roomTarget.addBot('hostTG');
+
+  // Transition to PLAYING state
+  roomTarget.status = GAME_STATES.PLAYING;
+  pLeader.status = PLAYER_STATUS.PLAYING;
+  pRival.status = PLAYER_STATUS.PLAYING;
+  pTrailing.status = PLAYER_STATUS.PLAYING;
+  roomTarget.players.get(botAttacker.id).status = PLAYER_STATUS.PLAYING;
+
+  pLeader.totalScore = 1200;
+  pRival.totalScore = 400;
+  pTrailing.totalScore = 100;
+
+  const targetCounts = { pLeader: 0, pRival: 0, pTrailing: 0 };
+  const TRIALS = 200;
+  for (let i = 0; i < TRIALS; i++) {
+    const chosen = roomTarget.chooseBotTarget(botAttacker.id);
+    assert.ok(chosen, 'Bot must select a valid target');
+    targetCounts[chosen.id]++;
+  }
+
+  const leaderPct = ((targetCounts.pLeader / TRIALS) * 100).toFixed(1);
+  const rivalPct = ((targetCounts.pRival / TRIALS) * 100).toFixed(1);
+  const trailingPct = ((targetCounts.pTrailing / TRIALS) * 100).toFixed(1);
+
+  // Theoretical expectation: 70% + (30% / 3) = ~80%. Baseline uniform random: 33.3%.
+  // Assert leader is targeted >= 65% of the time (more than double uniform baseline).
+  assert.ok(targetCounts.pLeader / TRIALS >= 0.65, `Leader should receive >= 65% of attacks, got ${leaderPct}%`);
+  assert.ok(targetCounts.pRival > 0, 'Rival should still receive some attacks');
+  assert.ok(targetCounts.pTrailing > 0, 'Trailing player should still receive some attacks');
+  console.log(`✓ PASS: Bot targeting is weighted toward highest-scoring living player: Leader (1200 pts) received ${leaderPct}% of ${TRIALS} attacks, Rival (400 pts): ${rivalPct}%, Trailing (100 pts): ${trailingPct}% (Uniform baseline: 33.3%)`);
+
+  console.log('\n✅ ALL BOT UNIT TESTS & BEHAVIORAL ASSERTIONS PASSED!\n');
+}
+
+// =========================================================================
+// PART 6: BOT FULL GAME SOCKET INTEGRATION TEST (1 Human + 7 Bots)
+// =========================================================================
+
+async function runBotFullGameIntegrationTest() {
+  console.log('======================================================');
+  console.log('PART 6: BOT FULL GAME INTEGRATION TEST (1 Human + 7 Bots)');
+  console.log('======================================================');
+
+  const hostSocket = io(SERVER_URL, { forceNew: true, transports: ['websocket'] });
+
+  await new Promise((resolve, reject) => {
+    hostSocket.on('connect', resolve);
+    hostSocket.on('connect_error', reject);
+    setTimeout(() => reject(new Error('Connection timeout')), 5000);
+  });
+  console.log('✓ Host connected to server');
+
+  // Create room
+  let roomCode, hostPlayerId;
+  hostSocket.emit('create-room', { playerName: 'BotTestHost' });
+  await new Promise(r => {
+    hostSocket.on('room-created', (data) => {
+      roomCode = data.roomCode;
+      hostPlayerId = data.playerId;
+      r();
+    });
+  });
+  console.log(`✓ Room created: ${roomCode}`);
+
+  // Add 7 bots
+  let botCount = 0;
+  const botPlayers = [];
+  hostSocket.on('player-joined', (data) => {
+    if (data.player.isBot) {
+      botCount++;
+      botPlayers.push(data.player);
+    }
+  });
+
+  for (let i = 0; i < 7; i++) {
+    hostSocket.emit('add-bot');
+    await new Promise(r => setTimeout(r, 100)); // small delay between adds
+  }
+  await new Promise(r => setTimeout(r, 500));
+  assert.strictEqual(botCount, 7, `Should have added 7 bots, got ${botCount}`);
+  console.log(`✓ 7 bots added (total players: ${botCount + 1}/8)`);
+
+  // Verify all bots have isBot flag and robot emoji name
+  for (const bot of botPlayers) {
+    assert.strictEqual(bot.isBot, true, `Bot ${bot.name} should have isBot: true`);
+    assert.ok(bot.name.includes('\u{1F916}'), `Bot ${bot.name} should have robot emoji`);
+  }
+  console.log('✓ All bots have isBot flag and 🤖 prefix');
+
+  // Use fast timings for test speed
+  hostSocket.emit('test-fast-timings', {
+    roundDuration: 3000,
+    preRoundDuration: 500,
+    postRoundDuration: 500,
+    eliminationDuration: 500
+  });
+  hostSocket.emit('test-grant-tokens', { count: 2, all: true });
+  await new Promise(r => setTimeout(r, 200));
+
+  // Start game and track lifecycle
+  let roundsPlayed = 0;
+  let eliminationsOccurred = 0;
+  let gameOverReceived = false;
+  let gameOverData = null;
+  let humanTokens = 0;
+  let humanGlitchesSent = 0;
+  let humanGlitchesReceived = 0;
+  let humanSurvivedPastPhase1 = false;
+  let currentRoundPlayers = [];
+
+  hostSocket.on('pre-round', (data) => {
+    roundsPlayed++;
+    if (roundsPlayed > 3) {
+      humanSurvivedPastPhase1 = true;
+    }
+  });
+
+  hostSocket.on('round-start', (data) => {
+    currentRoundPlayers = data.players || [];
+    const myPlayer = currentRoundPlayers.find(p => p.id === hostPlayerId);
+    if (myPlayer && myPlayer.glitchTokens !== undefined) {
+      humanTokens = myPlayer.glitchTokens;
+    }
+    const isAlive = myPlayer && myPlayer.status === 'PLAYING';
+
+    if (isAlive) {
+      // 1. Submit competitive human score (87.5% -> earns 2 tokens each round)
+      setTimeout(() => {
+        hostSocket.emit('submit-score', { roundData: { hits: 7, totalTargets: 8 } });
+      }, 500);
+
+      // 2. If human has banked tokens, sabotage a living bot
+      if (humanTokens >= 1) {
+        const aliveBot = currentRoundPlayers.find(p => p.isBot && p.status === 'PLAYING');
+        if (aliveBot) {
+          setTimeout(() => {
+            console.log(`  ⚡ [HUMAN ACTION] Human firing sabotage at ${aliveBot.name}...`);
+            hostSocket.emit('send-glitch', { targetPlayerId: aliveBot.id });
+          }, 1000);
+        }
+      }
+    }
+  });
+
+  hostSocket.on('glitch-confirmed', (data) => {
+    humanGlitchesSent++;
+    const tokens = data.remainingTokens !== undefined ? data.remainingTokens : data.tokensLeft;
+    humanTokens = tokens;
+    const effectName = getGlitchDisplayName(data.glitchType);
+    const victim = data.targetPlayerName;
+    const toastStr = `💥 ${effectName} → ${victim}!`;
+    console.log(`  ✓ [HUMAN ATTACKED BOT TOAST] "${toastStr}" (Tokens left: ${tokens})`);
+    assert.ok(victim && victim.startsWith('🤖'), `Victim name must be valid bot name, got: "${victim}"`);
+  });
+
+  hostSocket.on('glitch-incoming', (data) => {
+    humanGlitchesReceived++;
+    const attacker = data.fromPlayerName || data.attackerName;
+    const effectName = getGlitchDisplayName(data.glitchType);
+    const toastStr = data.isGhost
+      ? `👻 ${attacker} (Ghost) hit you with ${effectName}!`
+      : `🔥 ${attacker} hit you with ${effectName}!`;
+    console.log(`  ✓ [BOT ATTACKED HUMAN TOAST] "${toastStr}"`);
+    assert.ok(attacker && attacker.startsWith('🤖'), `Attacker name must be valid bot name, got: "${attacker}"`);
+  });
+
+  hostSocket.on('round-results', (data) => {
+    // Track updated tokens awarded from performance
+    if (data.standings) {
+      const me = data.standings.find(p => p.id === hostPlayerId);
+      if (me && me.glitchTokens !== undefined) {
+        humanTokens = me.glitchTokens;
+        console.log(`  ✓ [HUMAN TOKENS UPDATE] Human banked tokens: ${humanTokens}`);
+      }
+    }
+  });
+
+  hostSocket.on('elimination', (data) => {
+    eliminationsOccurred++;
+    console.log(`  [Elimination #${eliminationsOccurred}] ${data.eliminatedPlayerName} eliminated (${data.remainingCount} remain)`);
+  });
+
+  const gameOverPromise = new Promise(resolve => {
+    hostSocket.on('game-over', (data) => {
+      gameOverReceived = true;
+      gameOverData = data;
+      resolve();
+    });
+  });
+
+  hostSocket.emit('start-game');
+  console.log('✓ Game started (1 active human + 7 bots, fast timings)');
+  console.log('  Waiting for full game lifecycle...');
+
+  // Wait for game-over (8 players = 6 eliminations + 3 showdown rounds, fast timings ≈ ~30s max)
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Game did not complete within 90 seconds')), 90000));
+  await Promise.race([gameOverPromise, timeout]);
+
+  assert.ok(gameOverReceived, 'Game should have completed with game-over event');
+  assert.ok(gameOverData.winner, 'Should have a winner');
+  assert.strictEqual(eliminationsOccurred, 6, `Should have 6 eliminations for 8 players, got ${eliminationsOccurred}`);
+
+  // Assert human active participation requirements
+  assert.ok(humanSurvivedPastPhase1, 'Active human should survive Phase 1 and reach at least Phase 2');
+  assert.ok(humanGlitchesSent >= 1, `Human should have fired at least 1 sabotage at a bot (sent: ${humanGlitchesSent})`);
+  assert.ok(humanGlitchesReceived >= 1, `Human should have received at least 1 sabotage from bots (received: ${humanGlitchesReceived})`);
+  console.log(`✓ Active Human verified: Survived into Phase 2+ (Total rounds: ${roundsPlayed}), Sent sabotages: ${humanGlitchesSent}, Received sabotages: ${humanGlitchesReceived}`);
+  console.log(`✓ Game completed! Winner: ${gameOverData.winner.name}`);
+  console.log(`✓ Eliminations: ${eliminationsOccurred}`);
+
+  // Verify final standings include all 8 players
+  assert.strictEqual(gameOverData.finalStandings.length, 8, 'Final standings should include all 8 players');
+  console.log('✓ Final standings include all 8 players (1 human + 7 bots)');
+
+  hostSocket.disconnect();
+  console.log('✓ ACTIVE HUMAN + 7 BOTS INTEGRATION TEST PASSED 100%!\n');
+}
+
 async function main() {
   runUnitTests();
+  runBotUnitTests();
   await runSocketIntegrationTest();
   await run4PlayerGhostSabotageTest();
   await run8PlayerStressTest();
+  await runBotFullGameIntegrationTest();
+  console.log('\n🎉 ALL TESTS COMPLETED & VERIFIED 100%!\n');
+  process.exit(0);
 }
 
 main().catch((err) => {

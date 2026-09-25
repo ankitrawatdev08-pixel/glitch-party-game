@@ -5,10 +5,12 @@ import { copyToClipboard } from '../utils.js';
 import { HowToPlayModal } from '../components/howToPlayModal.js';
 
 export class LobbyScreen {
-  constructor(container, { onStartGame, onLeaveRoom }) {
+  constructor(container, { onStartGame, onLeaveRoom, onAddBot, onRemoveBot }) {
     this.container = container;
     this.onStartGame = onStartGame;
     this.onLeaveRoom = onLeaveRoom;
+    this.onAddBot = onAddBot || (() => {});
+    this.onRemoveBot = onRemoveBot || (() => {});
     this.roomCode = '';
     this.players = [];
     this.hostId = '';
@@ -59,7 +61,7 @@ export class LobbyScreen {
               const avatarSvg = generateAvatarSvg(p.color, p.id, 56);
 
               return `
-                <div class="player-card ${isMe ? 'player-card-me' : ''}" data-player-id="${p.id}">
+                <div class="player-card ${isMe ? 'player-card-me' : ''} ${p.isBot ? 'player-card-bot' : ''}" data-player-id="${p.id}">
                   <div class="player-avatar-wrap">
                     ${avatarSvg}
                   </div>
@@ -70,10 +72,17 @@ export class LobbyScreen {
                     </div>
                     ${isThisHost ? '<span class="host-badge">HOST</span>' : '<span class="status-dot-ready">READY</span>'}
                   </div>
+                  ${isHost && p.isBot ? `<button class="btn-remove-bot" data-bot-id="${p.id}" title="Remove bot">\u2715</button>` : ''}
                 </div>
               `;
             }).join('')}
           </div>
+
+          ${isHost && count < 8 ? `
+            <button id="btn-add-bot" class="btn btn-add-bot" type="button">
+              <span>\u{1F916}</span> <span>+ Add Bot</span>
+            </button>
+          ` : ''}
         </section>
 
         <footer class="lobby-footer">
@@ -139,5 +148,24 @@ export class LobbyScreen {
         this.onLeaveRoom();
       });
     }
+
+    // Bot controls (host only)
+    const btnAddBot = this.container.querySelector('#btn-add-bot');
+    if (btnAddBot) {
+      btnAddBot.addEventListener('click', () => {
+        sound.playClick();
+        this.onAddBot();
+      });
+    }
+
+    const removeBotBtns = this.container.querySelectorAll('.btn-remove-bot');
+    removeBotBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sound.playClick();
+        const botId = btn.getAttribute('data-bot-id');
+        if (botId) this.onRemoveBot(botId);
+      });
+    });
   }
 }
