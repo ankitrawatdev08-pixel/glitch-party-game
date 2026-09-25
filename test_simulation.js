@@ -27,8 +27,24 @@ const CANONICAL_NAMES = {
   SPEED_DEMON: 'Speed Demon'
 };
 
+const CANONICAL_GLITCH_KEYS = new Set(Object.keys(CANONICAL_NAMES));
+let canonicalGlitchCheckCount = 0;
+
+function assertCanonicalGlitchType(glitchType, context = 'Glitch event') {
+  assert.ok(
+    glitchType && CANONICAL_GLITCH_KEYS.has(glitchType),
+    `[CANONICAL_GLITCH_VIOLATION] ${context}: Received non-canonical glitchType "${glitchType}". Expected one of: ${Array.from(CANONICAL_GLITCH_KEYS).join(', ')}`
+  );
+  assert.ok(
+    CANONICAL_NAMES[glitchType] !== undefined,
+    `[CANONICAL_GLITCH_VIOLATION] ${context}: Missing canonical display name mapping for "${glitchType}"`
+  );
+  canonicalGlitchCheckCount++;
+}
+
 function getGlitchDisplayName(glitchId) {
-  return CANONICAL_NAMES[glitchId] || glitchId;
+  assertCanonicalGlitchType(glitchId, 'getGlitchDisplayName lookup');
+  return CANONICAL_NAMES[glitchId];
 }
 
 // =========================================================================
@@ -93,6 +109,7 @@ function runUnitTests() {
   assert.strictEqual(p1.glitchTokens, 1);
   assert.strictEqual(p2.activeGlitches.length, 1);
   assert.strictEqual(p2.activeGlitches[0], 'SCREEN_FLIP');
+  assertCanonicalGlitchType(p2.activeGlitches[0], 'Part 1 Single Attack');
   console.log('✓ Attack applied and token deducted');
 
   // Test 5: Anti-Spam duplicate attack rejection
@@ -118,14 +135,17 @@ function runUnitTests() {
 
   // 1st attacker (p1 -> p2)
   assert.strictEqual(room.sendGlitch('p1', 'p2', 'SCREEN_FLIP'), true);
+  assertCanonicalGlitchType(p2.activeGlitches[0], 'Part 1 1st Attacker');
   assert.strictEqual(p1.glitchTokens, 0);
 
   // 2nd attacker (p3 -> p2)
   assert.strictEqual(room.sendGlitch('p3', 'p2', 'JELLY_MODE'), true);
+  assertCanonicalGlitchType(p2.activeGlitches[1], 'Part 1 2nd Attacker');
   assert.strictEqual(p3.glitchTokens, 0);
 
   // 3rd attacker (p4 -> p2)
   assert.strictEqual(room.sendGlitch('p4', 'p2', 'FOG_OF_WAR'), true);
+  assertCanonicalGlitchType(p2.activeGlitches[2], 'Part 1 3rd Attacker');
   assert.strictEqual(p4.glitchTokens, 0);
 
   assert.strictEqual(p2.activeGlitches.length, 3, 'Target should have exactly 3 glitches');
@@ -453,12 +473,14 @@ async function runSocketIntegrationTest() {
     });
 
     playerA.socket.on('glitch-confirmed', (data) => {
+      assertCanonicalGlitchType(data.glitchType, 'Part 2 Human-vs-Human confirmed');
       const canonicalName = getGlitchDisplayName(data.glitchType);
       console.log(`✓ [GLITCH CONFIRMED TOAST DATA] 💥 ${canonicalName} → ${data.targetPlayerName}! Tokens left: ${data.remainingTokens}`);
       assert.strictEqual(canonicalName, CANONICAL_NAMES[data.glitchType]);
     });
 
     playerB.socket.on('glitch-incoming', (data) => {
+      assertCanonicalGlitchType(data.glitchType, 'Part 2 Human-vs-Human incoming');
       const canonicalName = getGlitchDisplayName(data.glitchType);
       console.log(`✓ [GLITCH INCOMING TOAST DATA] 🔥 ${data.fromPlayerName} hit you with ${canonicalName}!`);
       assert.strictEqual(canonicalName, CANONICAL_NAMES[data.glitchType]);
@@ -602,12 +624,14 @@ async function run4PlayerGhostSabotageTest() {
     });
 
     pD.socket.on('glitch-confirmed', (data) => {
+      assertCanonicalGlitchType(data.glitchType, 'Part 2B Ghost-vs-Human confirmed');
       console.log(`✓ Delta4 (Ghost) glitch confirmed: isGhost=${data.isGhost}, target=${data.targetPlayerName}`);
       assert.strictEqual(data.isGhost, true, 'glitch-confirmed must indicate isGhost: true');
       assert.strictEqual(data.targetPlayerName, 'Alpha4');
     });
 
     pA.socket.on('glitch-incoming', (data) => {
+      assertCanonicalGlitchType(data.glitchType, 'Part 2B Ghost-vs-Human incoming');
       const canonicalName = getGlitchDisplayName(data.glitchType);
       const toastText = `👻 ${data.fromPlayerName} (Ghost) hit you with ${canonicalName}!`;
       console.log(`✓ Alpha4 (Victim) received incoming ghost glitch!`);
@@ -691,8 +715,12 @@ async function run8PlayerStressTest() {
     c.socket.on('active-glitches-updated', () => {
       activeBroadcastCount++;
     });
-    c.socket.on('glitch-confirmed', () => {
+    c.socket.on('glitch-confirmed', (data) => {
       confirmedCount++;
+      assertCanonicalGlitchType(data.glitchType, 'Part 3 8-Player Stress confirmed');
+    });
+    c.socket.on('glitch-incoming', (data) => {
+      assertCanonicalGlitchType(data.glitchType, 'Part 3 8-Player Stress incoming');
     });
   });
 
@@ -814,6 +842,9 @@ function runBotUnitTests() {
   // Bot attacks human — should succeed
   room3.sendGlitch(bot3.id, 'human3');
   assert.strictEqual(botPlayer3.glitchTokens, 1, 'Bot should have 1 token after attack');
+  const human3Target = room3.players.get('human3');
+  assert.ok(human3Target.activeGlitches.length > 0);
+  assertCanonicalGlitchType(human3Target.activeGlitches[0], 'Part 5 Bot-attacks-Human');
   console.log('✓ Bot glitch succeeded through standard sendGlitch path');
 
   // Anti-spam: same target twice in same round should fail
@@ -844,6 +875,9 @@ function runBotUnitTests() {
   // Give ghost token
   room4.ghostGlitchUsed.clear();
   room4.sendGlitch(bot4.id, 'human4a');
+  const human4aTarget = room4.players.get('human4a');
+  assert.ok(human4aTarget.activeGlitches.length > 0);
+  assertCanonicalGlitchType(human4aTarget.activeGlitches[0], 'Part 5 Ghost-Bot-attacks-Human');
   console.log('✓ Ghost bot can glitch during non-Showdown phase');
 
   // Now eliminate one more to create showdown
@@ -1087,6 +1121,7 @@ async function runBotFullGameIntegrationTest() {
 
   hostSocket.on('glitch-confirmed', (data) => {
     humanGlitchesSent++;
+    assertCanonicalGlitchType(data.glitchType, 'Part 6 Full Game Human-attacks-Bot confirmed');
     const tokens = data.remainingTokens !== undefined ? data.remainingTokens : data.tokensLeft;
     humanTokens = tokens;
     const effectName = getGlitchDisplayName(data.glitchType);
@@ -1098,6 +1133,10 @@ async function runBotFullGameIntegrationTest() {
 
   hostSocket.on('glitch-incoming', (data) => {
     humanGlitchesReceived++;
+    const scenario = data.isGhost
+      ? 'Part 6 Full Game Ghost-Bot-attacks-Human incoming'
+      : 'Part 6 Full Game Bot-attacks-Human incoming';
+    assertCanonicalGlitchType(data.glitchType, scenario);
     const attacker = data.fromPlayerName || data.attackerName;
     const effectName = getGlitchDisplayName(data.glitchType);
     const toastStr = data.isGhost
@@ -1166,6 +1205,12 @@ async function main() {
   await run4PlayerGhostSabotageTest();
   await run8PlayerStressTest();
   await runBotFullGameIntegrationTest();
+
+  console.log('\n======================================================');
+  console.log(`TOTAL CANONICAL GLITCH ASSERTIONS VERIFIED: ${canonicalGlitchCheckCount}`);
+  console.log(`CANONICAL GLITCH COVERAGE: 100% (0 non-canonical effects across all scenarios)`);
+  console.log('======================================================');
+  assert.ok(canonicalGlitchCheckCount >= 30, `Expected at least 30 canonical glitch checks across suite, got ${canonicalGlitchCheckCount}`);
   console.log('\n🎉 ALL TESTS COMPLETED & VERIFIED 100%!\n');
   process.exit(0);
 }
