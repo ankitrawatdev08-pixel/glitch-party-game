@@ -1404,7 +1404,6 @@ body {
   gap: 14px;
   max-height: calc(100dvh - 28px);
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding-bottom: 8px;
 }
 
@@ -1499,7 +1498,6 @@ body {
 .standings-scroll-container {
   max-height: min(280px, 35vh);
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding-right: 4px;
   display: flex;
   flex-direction: column;
@@ -1581,7 +1579,6 @@ body {
   max-width: 110px;
   overflow-x: auto;
   white-space: nowrap;
-  scrollbar-width: none;
 }
 
 .scores-history-col::-webkit-scrollbar {
@@ -1978,7 +1975,6 @@ body {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
 .table-row {
@@ -2342,7 +2338,6 @@ body {
 .htp-modal-body {
   padding: 16px 20px;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   flex: 1;
 }
 
