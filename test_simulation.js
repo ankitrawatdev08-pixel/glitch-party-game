@@ -1051,9 +1051,25 @@ async function runBotFullGameIntegrationTest() {
     const isAlive = myPlayer && myPlayer.status === 'PLAYING';
 
     if (isAlive) {
-      // 1. Submit competitive human score (87.5% -> earns 2 tokens each round)
+      // Grant tokens in round 1 to test immediate sabotage capabilities
+      if (roundsPlayed === 1) {
+        hostSocket.emit('test-grant-tokens', { count: 2, all: true });
+      }
+
+      // 1. Submit competitive human score (85-100% across any minigame -> earns 2 tokens each round)
       setTimeout(() => {
-        hostSocket.emit('submit-score', { roundData: { hits: 7, totalTargets: 8 } });
+        hostSocket.emit('submit-score', {
+          roundData: {
+            hits: 7,
+            totalTargets: 8,
+            correct: 8,
+            wrong: 1,
+            correctCells: 4,
+            totalCells: 4,
+            correctWaypoints: 5,
+            totalWaypoints: 5
+          }
+        });
       }, 500);
 
       // 2. If human has banked tokens, sabotage a living bot
