@@ -183,6 +183,7 @@ class GameRoom {
     const player = this.players.get(playerId);
     if (!player) return;
 
+    this.clearDisconnectTimer(playerId);
     player.status = PLAYER_STATUS.DISCONNECTED;
     player.disconnectedAt = Date.now();
     this.io.to(this.code).emit('player-disconnected', { playerId, playerName: player.name });
@@ -357,6 +358,7 @@ class GameRoom {
   }
 
   startPreRound() {
+    this.clearTimer();
     this.status = GAME_STATES.PRE_ROUND;
     this.globalRound++;
     this.ghostGlitchUsed.clear();
@@ -389,6 +391,7 @@ class GameRoom {
   }
 
   startRound() {
+    this.clearTimer();
     this.status = GAME_STATES.PLAYING;
     this.roundStartedAt = Date.now();
     this.attackerGlitchedTargetsThisRound.clear();
@@ -992,10 +995,14 @@ class GameRoom {
     this.activeGlitches.clear();
     this.ghostGlitchUsed.clear();
     this.attackerGlitchedTargetsThisRound.clear();
+    this.submittedScores.clear();
+    this.tieBreakInfo = null;
     for (const t of this.activeGlitchTimeouts) clearTimeout(t);
     this.activeGlitchTimeouts = [];
     for (const t of this.botActionTimeouts) clearTimeout(t);
     this.botActionTimeouts = [];
+    for (const t of this.disconnectTimers.values()) clearTimeout(t);
+    this.disconnectTimers.clear();
 
     // Reset players
     for (const player of this.players.values()) {
@@ -1111,6 +1118,8 @@ class GameRoom {
   destroy() {
     this.clearTimer();
     if (this.idleTimer) clearTimeout(this.idleTimer);
+    for (const t of this.activeGlitchTimeouts) clearTimeout(t);
+    this.activeGlitchTimeouts = [];
     for (const t of this.botActionTimeouts) clearTimeout(t);
     this.botActionTimeouts = [];
     for (const t of this.disconnectTimers.values()) clearTimeout(t);

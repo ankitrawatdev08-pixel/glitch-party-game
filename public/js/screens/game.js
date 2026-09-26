@@ -86,21 +86,31 @@ export class GameScreenManager {
       </div>
     `;
 
-    // Visual countdown with ticks (default 8s pre-round hold)
-    let secondsLeft = Math.ceil((data.duration || 8000) / 1000);
+    // Visual countdown with drift-free wall-clock tracking (default 5s pre-round hold)
+    const durationMs = data.duration || 5000;
+    const startTimestamp = Date.now();
+    let lastSeconds = Math.ceil(durationMs / 1000);
     const countdownEl = this.container.querySelector('#preround-countdown');
+    if (countdownEl) countdownEl.textContent = lastSeconds;
 
     sound.playTick();
+    if (this.preRoundTimer) clearInterval(this.preRoundTimer);
     this.preRoundTimer = setInterval(() => {
-      secondsLeft--;
-      if (secondsLeft > 0) {
+      const elapsed = Date.now() - startTimestamp;
+      const remainingMs = Math.max(0, durationMs - elapsed);
+      const secondsLeft = Math.ceil(remainingMs / 1000);
+
+      if (secondsLeft !== lastSeconds && secondsLeft > 0) {
+        lastSeconds = secondsLeft;
         if (countdownEl) countdownEl.textContent = secondsLeft;
         sound.playTick();
-      } else {
+      }
+
+      if (remainingMs <= 0) {
         clearInterval(this.preRoundTimer);
         this.preRoundTimer = null;
       }
-    }, 1000);
+    }, 100);
   }
 
   // --- 2. GAMEPLAY SCREEN (ROUND ACTIVE & ALWAYS-ON SABOTAGE BAR) ---
@@ -246,24 +256,33 @@ export class GameScreenManager {
 
     this.currentMiniGameInstance.start(miniGameConfig);
 
-    // 8-second synchronized timer countdown
-    const roundDurationSec = Math.floor((data.duration || 8000) / 1000);
-    let secondsLeft = roundDurationSec;
+    // Synchronized timer countdown with drift-free wall-clock tracking
+    const roundDurationMs = data.duration || 8000;
+    const roundStartTime = Date.now();
+    let lastRoundSec = Math.floor(roundDurationMs / 1000);
+    if (timerNum) timerNum.textContent = lastRoundSec;
 
+    if (this.roundTimer) clearInterval(this.roundTimer);
     this.roundTimer = setInterval(() => {
-      secondsLeft--;
-      if (secondsLeft >= 0) {
+      const elapsed = Date.now() - roundStartTime;
+      const remainingMs = Math.max(0, roundDurationMs - elapsed);
+      const secondsLeft = Math.ceil(remainingMs / 1000);
+
+      if (secondsLeft !== lastRoundSec && secondsLeft >= 0) {
+        lastRoundSec = secondsLeft;
         if (timerNum) timerNum.textContent = secondsLeft;
         if (secondsLeft <= 3 && timerBadge) {
           timerBadge.classList.add('timer-warning');
           sound.playTick();
         }
       }
-      if (secondsLeft <= 0) {
+
+      if (remainingMs <= 0) {
+        if (timerNum) timerNum.textContent = '0';
         clearInterval(this.roundTimer);
         this.roundTimer = null;
       }
-    }, 1000);
+    }, 100);
   }
 
   bindSabotageBarEvents() {

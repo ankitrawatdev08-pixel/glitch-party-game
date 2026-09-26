@@ -64,7 +64,7 @@ const MINIGAMES = [
 
 const TIMINGS = {
   ROUND_DURATION: 8000,
-  PRE_ROUND_DURATION: 8000, // 8-second pre-round hold for reading instructions
+  PRE_ROUND_DURATION: 5000, // 5-second pre-round hold (Patch 1.0.5 pacing tune-up)
   POST_ROUND_DURATION: 4000,
   ELIMINATION_DURATION: 5000,
   DISCONNECT_GRACE_PERIOD: 30000,
