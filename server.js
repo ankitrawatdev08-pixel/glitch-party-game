@@ -229,6 +229,19 @@ io.on('connection', (socket) => {
       } catch (_) {}
     });
 
+    socket.on('test-force-minigame', ({ miniGameId }) => {
+      try {
+        const binding = roomManager.socketToRoom.get(socket.id);
+        if (binding) {
+          const room = roomManager.getRoom(binding.roomCode);
+          if (room && miniGameId) {
+            room.forcedNextMiniGame = miniGameId;
+            room.miniGameQueue.unshift(miniGameId);
+          }
+        }
+      } catch (_) {}
+    });
+
     socket.on('test-inspect-room-state', (callback) => {
       try {
         const binding = roomManager.socketToRoom.get(socket.id);

@@ -52,6 +52,7 @@ class GameRoom {
     this.activeGlitchTimeouts = []; // timeouts for expiring carried-over or mid-round glitches
     this.botIds = new Set(); // IDs of AI bot players
     this.botActionTimeouts = []; // timeouts for bot score/glitch scheduling
+    this.forcedNextMiniGame = null; // dev/test helper to force specific minigame
 
     // Scoring & History
     this.phaseScores = new Map(); // playerId -> number
@@ -317,6 +318,11 @@ class GameRoom {
   }
 
   getNextMiniGame() {
+    if (this.forcedNextMiniGame) {
+      const g = this.forcedNextMiniGame;
+      this.forcedNextMiniGame = null;
+      return g;
+    }
     if (this.miniGameQueue.length === 0) {
       this.refillMiniGameQueue();
     }

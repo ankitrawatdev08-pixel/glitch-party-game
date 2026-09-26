@@ -288,6 +288,7 @@ async function runDiagnosis() {
 
   // Stack Case 4A: SCREEN_FLIP + INPUT_SWAP + FOG_OF_WAR
   {
+    console.log('\nCase 4A: [SCREEN_FLIP + INPUT_SWAP + FOG_OF_WAR]');
     glitchManager.clearGlitches();
     glitchManager.addGlitch('SCREEN_FLIP');
     glitchManager.addGlitch('INPUT_SWAP');
@@ -318,13 +319,17 @@ async function runDiagnosis() {
     };
 
     game.onCanvasPointerDown(touchEvent);
-    console.log(`[3-Stack: SCREEN_FLIP + INPUT_SWAP + FOG_OF_WAR] Hits=${game.hits}, Misses=${game.misses} | Torchlight aligned at (${torchX}, ${torchY}) -> ${game.hits === 1 ? '✓ PASS' : '❌ FAIL'}`);
+    console.log(`  - Target Internal: (100, 100) | Visual on Inverted Screen: (300, 300)`);
+    console.log(`  - Compensated Touch Input: Visual Tap at (${visualX}, ${visualY})`);
+    console.log(`  - Torchlight Tracking: Internal=(${glitchManager.fogPointer.x}, ${glitchManager.fogPointer.y}) -> Visual=(${torchX}, ${torchY}) [Under Finger: true]`);
+    console.log(`  - Result: Hits=${game.hits}, Misses=${game.misses} -> ${game.hits === 1 ? '✓ PASS' : '❌ FAIL'}`);
     assert.strictEqual(game.hits, 1, '3-Stack SCREEN_FLIP + INPUT_SWAP + FOG_OF_WAR must register hit with motor compensation');
     game.stop();
   }
 
   // Stack Case 4B: SCREEN_FLIP + SPEED_DEMON + JELLY_MODE
   {
+    console.log('\nCase 4B: [SCREEN_FLIP + SPEED_DEMON + JELLY_MODE]');
     glitchManager.clearGlitches();
     glitchManager.addGlitch('SCREEN_FLIP');
     glitchManager.addGlitch('SPEED_DEMON');
@@ -346,13 +351,17 @@ async function runDiagnosis() {
     };
 
     game.onCanvasPointerDown(touchEvent);
-    console.log(`[3-Stack: SCREEN_FLIP + SPEED_DEMON + JELLY_MODE] Hits=${game.hits}, Misses=${game.misses}, SpeedMultiplier=${glitchManager.getSpeedMultiplier()}x -> ${game.hits === 1 ? '✓ PASS' : '❌ FAIL'}`);
+    console.log(`  - Target Internal: (100, 100) | Visual on Inverted Screen: (${visualX}, ${visualY})`);
+    console.log(`  - Direct Touch Input: Visual Tap at (${visualX}, ${visualY})`);
+    console.log(`  - Effects Active: SpeedMultiplier=${glitchManager.getSpeedMultiplier()}x, JellyAnimation=active`);
+    console.log(`  - Result: Hits=${game.hits}, Misses=${game.misses} -> ${game.hits === 1 ? '✓ PASS' : '❌ FAIL'}`);
     assert.strictEqual(game.hits, 1, '3-Stack SCREEN_FLIP + SPEED_DEMON + JELLY_MODE must register hit');
     game.stop();
   }
 
   // Stack Case 4C: SCREEN_FLIP + INPUT_SWAP + SPEED_DEMON
   {
+    console.log('\nCase 4C: [SCREEN_FLIP + INPUT_SWAP + SPEED_DEMON]');
     glitchManager.clearGlitches();
     glitchManager.addGlitch('SCREEN_FLIP');
     glitchManager.addGlitch('INPUT_SWAP');
@@ -371,8 +380,11 @@ async function runDiagnosis() {
     };
 
     game.onCanvasPointerDown(touchEvent);
-    console.log(`[3-Stack: SCREEN_FLIP + INPUT_SWAP + SPEED_DEMON] Hits=${game.hits}, Misses=${game.misses}, SpeedMultiplier=${glitchManager.getSpeedMultiplier()}x -> ${game.hits === 1 ? '✓ PASS' : '❌ FAIL'}`);
-    assert.strictEqual(game.hits, 1, '3-Stack SCREEN_FLIP + INPUT_SWAP + SPEED_DEMON must register hit with motor compensation');
+    console.log(`  - Target Internal: (100, 100) | Visual on Inverted Screen: (300, 300)`);
+    console.log(`  - Compensated Touch Input: Visual Tap at (${visualX}, ${visualY})`);
+    console.log(`  - Effects Active: SpeedMultiplier=${glitchManager.getSpeedMultiplier()}x, InputMirror=active`);
+    console.log(`  - Result: Hits=${game.hits}, Misses=${game.misses} -> ${game.hits === 1 ? '✓ PASS' : '❌ FAIL'}`);
+    assert.strictEqual(game.hits, 1, '3-Stack SCREEN_FLIP + INPUT_SWAP + SPEED_DEMON must register hit');
     game.stop();
   }
 
