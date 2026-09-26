@@ -132,18 +132,35 @@ class GlitchManager {
     return this.hasGlitch('SPEED_DEMON') ? 1.5 : 1.0;
   }
 
-  // Modifies input touch/pointer coordinates if INPUT_SWAP is active
+  // Modifies input touch/pointer coordinates if SCREEN_FLIP or INPUT_SWAP is active
   modifyCoordinates(x, y, width, height) {
-    if (this.hasGlitch('INPUT_SWAP')) {
-      return { x: width - x, y };
+    let outX = x;
+    let outY = y;
+
+    // SCREEN_FLIP rotates canvas 180deg visually: map visual viewport tap (outX, outY) to internal canvas coordinates
+    if (this.hasGlitch('SCREEN_FLIP')) {
+      outX = width - outX;
+      outY = height - outY;
     }
-    return { x, y };
+
+    // INPUT_SWAP provides motor confusion by mirroring horizontal controls
+    if (this.hasGlitch('INPUT_SWAP')) {
+      outX = width - outX;
+    }
+
+    return { x: outX, y: outY };
   }
 
   updateFogPointer(x, y, width, height) {
+    let px = x;
+    let py = y;
+    if (this.hasGlitch('SCREEN_FLIP')) {
+      px = width - px;
+      py = height - py;
+    }
     this.fogPointer = {
-      x: Math.max(0, Math.min(width, x)),
-      y: Math.max(0, Math.min(height, y))
+      x: Math.max(0, Math.min(width, px)),
+      y: Math.max(0, Math.min(height, py))
     };
   }
 

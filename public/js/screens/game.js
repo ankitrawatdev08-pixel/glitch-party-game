@@ -117,6 +117,7 @@ export class GameScreenManager {
 
   showRound(data, miniGameId, miniGameConfig) {
     this.cleanupCurrentGame();
+    this.glitchedTargetsThisRound.clear();
     sound.playRoundStart();
 
     const isShowdown = !!data.isShowdown;
@@ -297,8 +298,13 @@ export class GameScreenManager {
 
     const buttons = sabotageBar.querySelectorAll('.sabotage-avatar-btn');
     buttons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      let lastTrigger = 0;
+      const handleAttack = (e) => {
         e.stopPropagation();
+        const now = Date.now();
+        if (now - lastTrigger < 350) return; // Prevent double-trigger from pointerup + synthetic click
+        lastTrigger = now;
+
         const targetId = btn.getAttribute('data-target-id');
         if (!targetId || btn.disabled) return;
 
@@ -320,7 +326,10 @@ export class GameScreenManager {
         this.onSendGlitch(targetId);
 
         this.updateSabotageBarState();
-      });
+      };
+
+      btn.addEventListener('pointerup', handleAttack);
+      btn.addEventListener('click', handleAttack);
     });
   }
 
