@@ -228,6 +228,37 @@ io.on('connection', (socket) => {
         }
       } catch (_) {}
     });
+
+    socket.on('test-inspect-room-state', (callback) => {
+      try {
+        const binding = roomManager.socketToRoom.get(socket.id);
+        if (binding) {
+          const room = roomManager.getRoom(binding.roomCode);
+          if (room && typeof callback === 'function') {
+            const botGhostCount = Array.from(room.botIds).filter(bId => {
+              const b = room.players.get(bId);
+              return b && b.status === 'ELIMINATED';
+            }).length;
+
+            callback({
+              attackerGlitchedTargetsCount: room.attackerGlitchedTargetsThisRound.size,
+              carriedOverGlitchesCount: room.carriedOverGlitches.size,
+              ghostGlitchUsedCount: room.ghostGlitchUsed.size,
+              activeGlitchTimeoutsCount: room.activeGlitchTimeouts.length,
+              botActionTimeoutsCount: room.botActionTimeouts.length,
+              disconnectTimersCount: room.disconnectTimers.size,
+              submittedScoresCount: room.submittedScores.size,
+              tieBreakInfo: room.tieBreakInfo,
+              eliminationOrderLength: room.eliminationOrder.length,
+              activeGlitchesCount: room.activeGlitches.size,
+              botCount: room.botIds.size,
+              playersCount: room.players.size,
+              botGhostCount
+            });
+          }
+        }
+      } catch (_) {}
+    });
   }
 
   // PLAY AGAIN

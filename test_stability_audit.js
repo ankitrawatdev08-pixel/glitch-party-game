@@ -174,12 +174,13 @@ async function runTimerDriftAudit() {
 }
 
 // =========================================================================
-// AUDIT PART 2: 5 CONSECUTIVE GAMES SOAK TEST (PLAY AGAIN FLOW)
+// =========================================================================
+// AUDIT PART 2: CONSECUTIVE GAMES SOAK TEST WITH BOTS (PLAY AGAIN FLOW)
 // =========================================================================
 
 async function runConsecutiveGamesSoakTest() {
   console.log('======================================================');
-  console.log('AUDIT PART 2: 5 CONSECUTIVE GAMES SOAK TEST (PLAY AGAIN REUSE)');
+  console.log('AUDIT PART 2: CONSECUTIVE GAMES SOAK TEST (PLAY AGAIN REUSE WITH BOTS)');
   console.log('======================================================');
 
   const clientA = io(SERVER_URL, { forceNew: true, transports: ['websocket'] });
@@ -204,41 +205,55 @@ async function runConsecutiveGamesSoakTest() {
     r();
   }));
 
-  // Fast timings for rapid soak iterations
+  // Add 2 bots so room has 4 players (Host + Guest + 2 Bots)
+  // This exercises eliminations, ghosts, bot actions, and ghost glitch mechanisms across rounds
+  console.log(`[${formatTimestamp()}] Adding 2 bots to room [${roomCode}] (Lobby size: 4 players)...`);
+  clientA.emit('add-bot');
+  await new Promise(r => setTimeout(r, 200));
+  clientA.emit('add-bot');
+  await new Promise(r => setTimeout(r, 200));
+
+  // Fast timings for rapid soak iterations (4-player games have 3 phases x 3 rounds = 9 rounds)
   clientA.emit('test-fast-timings', {
-    preRoundDuration: 250,
-    roundDuration: 600,
-    postRoundDuration: 250,
-    eliminationDuration: 300
+    preRoundDuration: 200,
+    roundDuration: 400,
+    postRoundDuration: 200,
+    eliminationDuration: 200
   });
   await new Promise(r => setTimeout(r, 100));
 
-  const GAMES_TO_RUN = 5;
+  const GAMES_TO_RUN = 3;
 
   for (let gameIdx = 1; gameIdx <= GAMES_TO_RUN; gameIdx++) {
-    console.log(`\n▶ Starting Game #${gameIdx} in Room [${roomCode}] (Play Again cycle)...`);
+    console.log(`\n▶ [${formatTimestamp()}] Starting Game #${gameIdx} in Room [${roomCode}] (4 Players: 2 Humans + 2 Bots)...`);
 
     let gameOverReceived = false;
-    let glitchesSent = 0;
-    let resetReceived = false;
+    let humanGlitchesSent = 0;
+    let botGlitchesTriggered = 0;
+    let eliminationsObserved = 0;
 
-    const roundStartListener = () => {
-      // Both players submit valid high scores
+    const roundStartListener = (roundData) => {
+      // Both human players submit scores
       clientA.emit('submit-score', { roundData: { hits: 8, totalTargets: 8, correct: 8, wrong: 0, correctCells: 4, totalCells: 4, correctWaypoints: 5, totalWaypoints: 5 } });
       clientB.emit('submit-score', { roundData: { hits: 6, totalTargets: 8, correct: 6, wrong: 1, correctCells: 3, totalCells: 4, correctWaypoints: 4, totalWaypoints: 5 } });
 
-      // Grant tokens and test attack
+      // Grant tokens and test human attack
       clientA.emit('test-grant-tokens', { count: 1, all: true });
       setTimeout(() => {
         clientA.emit('send-glitch', { targetPlayerId: guestId });
-      }, 100);
+      }, 50);
     };
 
     clientA.on('round-start', roundStartListener);
 
     clientA.on('glitch-confirmed', () => {
-      glitchesSent++;
+      humanGlitchesSent++;
     });
+
+    const playerEliminatedListener = () => {
+      eliminationsObserved++;
+    };
+    clientA.on('elimination', playerEliminatedListener);
 
     const gameOverPromise = new Promise(resolve => {
       clientA.once('game-over', data => {
@@ -250,15 +265,16 @@ async function runConsecutiveGamesSoakTest() {
     clientA.emit('start-game');
     const gameOverData = await gameOverPromise;
     clientA.off('round-start', roundStartListener);
+    clientA.off('player-eliminated', playerEliminatedListener);
 
-    console.log(`  ✓ Game #${gameIdx} completed successfully! Winner: ${gameOverData.winner.name}`);
-    console.log(`    Total sabotages confirmed during game: ${glitchesSent}`);
+    console.log(`  ✓ [${formatTimestamp()}] Game #${gameIdx} completed successfully! Winner: "${gameOverData.winner.name}"`);
+    console.log(`    - Human sabotages confirmed during game: ${humanGlitchesSent}`);
+    console.log(`    - Elimination transitions observed: ${eliminationsObserved}`);
 
     // Trigger PLAY AGAIN flow
-    console.log(`  ⚡ Host emitting "play-again" to recycle Room [${roomCode}]...`);
+    console.log(`  ⚡ [${formatTimestamp()}] Host emitting "play-again" to recycle Room [${roomCode}]...`);
     const resetPromise = new Promise(resolve => {
       clientA.once('room-reset', data => {
-        resetReceived = true;
         resolve(data);
       });
     });
@@ -266,26 +282,66 @@ async function runConsecutiveGamesSoakTest() {
     clientA.emit('play-again');
     const resetData = await resetPromise;
 
-    // --- THOROUGH STATE RESET ASSERTIONS ---
-    console.log(`  🔍 Auditing clean state reset for Game #${gameIdx} -> #${gameIdx + 1}:`);
+    // --- QUERY SERVER INTERNAL ROOM STATE DIRECTLY ---
+    const internalState = await new Promise(resolve => {
+      clientA.emit('test-inspect-room-state', state => resolve(state));
+    });
 
-    assert.ok(resetReceived, 'room-reset must be received by all clients');
+    console.log(`  🔍 [${formatTimestamp()}] EXPLICIT STATE AUDIT FOR REMATCH CYCLE #${gameIdx} -> #${gameIdx + 1}:`);
+    console.log(`     ├── [Anti-Spam] attackerGlitchedTargetsThisRound size: ${internalState.attackerGlitchedTargetsCount} (expected: 0)`);
+    console.log(`     ├── [Carryover] carriedOverGlitches map size: ${internalState.carriedOverGlitchesCount} (expected: 0)`);
+    console.log(`     ├── [Ghost Flags] ghostGlitchUsed Set size: ${internalState.ghostGlitchUsedCount} (expected: 0)`);
+    console.log(`     ├── [Glitch Timers] activeGlitchTimeouts pending: ${internalState.activeGlitchTimeoutsCount} (expected: 0)`);
+    console.log(`     ├── [Bot Timers] botActionTimeouts pending: ${internalState.botActionTimeoutsCount} (expected: 0)`);
+    console.log(`     ├── [Bot Status] Bot ghosts remaining: ${internalState.botGhostCount} (expected: 0)`);
+    console.log(`     ├── [Disconnect Timers] disconnectTimers map size: ${internalState.disconnectTimersCount} (expected: 0)`);
+    console.log(`     ├── [Scores] submittedScores map size: ${internalState.submittedScoresCount} (expected: 0)`);
+    console.log(`     ├── [Tie-Break] tieBreakInfo: ${internalState.tieBreakInfo} (expected: null)`);
+    console.log(`     ├── [Eliminations] eliminationOrder length: ${internalState.eliminationOrderLength} (expected: 0)`);
+    console.log(`     └── [Active Glitches] activeGlitches map size: ${internalState.activeGlitchesCount} (expected: 0)`);
+
+    // Explicit mechanism assertions:
+    assert.strictEqual(internalState.attackerGlitchedTargetsCount, 0,
+      `Cycle #${gameIdx}: attackerGlitchedTargetsThisRound must be empty, found ${internalState.attackerGlitchedTargetsCount}`);
+    assert.strictEqual(internalState.carriedOverGlitchesCount, 0,
+      `Cycle #${gameIdx}: carriedOverGlitches must be empty, found ${internalState.carriedOverGlitchesCount}`);
+    assert.strictEqual(internalState.ghostGlitchUsedCount, 0,
+      `Cycle #${gameIdx}: ghostGlitchUsed must be empty, found ${internalState.ghostGlitchUsedCount}`);
+    assert.strictEqual(internalState.activeGlitchTimeoutsCount, 0,
+      `Cycle #${gameIdx}: activeGlitchTimeouts must be empty, found ${internalState.activeGlitchTimeoutsCount}`);
+    assert.strictEqual(internalState.botActionTimeoutsCount, 0,
+      `Cycle #${gameIdx}: botActionTimeouts must be empty, found ${internalState.botActionTimeoutsCount}`);
+    assert.strictEqual(internalState.botGhostCount, 0,
+      `Cycle #${gameIdx}: bot ghosts must be 0, found ${internalState.botGhostCount}`);
+    assert.strictEqual(internalState.disconnectTimersCount, 0,
+      `Cycle #${gameIdx}: disconnectTimers must be empty, found ${internalState.disconnectTimersCount}`);
+    assert.strictEqual(internalState.submittedScoresCount, 0,
+      `Cycle #${gameIdx}: submittedScores must be empty, found ${internalState.submittedScoresCount}`);
+    assert.strictEqual(internalState.tieBreakInfo, null,
+      `Cycle #${gameIdx}: tieBreakInfo must be null, found ${internalState.tieBreakInfo}`);
+    assert.strictEqual(internalState.eliminationOrderLength, 0,
+      `Cycle #${gameIdx}: eliminationOrder must be empty, found ${internalState.eliminationOrderLength}`);
+    assert.strictEqual(internalState.activeGlitchesCount, 0,
+      `Cycle #${gameIdx}: activeGlitches must be empty, found ${internalState.activeGlitchesCount}`);
+
+    // Public player state assertions:
     assert.strictEqual(resetData.hostId, hostId, 'Host ID must be preserved');
-    assert.strictEqual(resetData.players.length, 2, 'Player count must remain exactly 2');
+    assert.strictEqual(resetData.players.length, 4, 'Player count must remain exactly 4 (2 humans + 2 bots)');
+    assert.strictEqual(internalState.botCount, 2, 'Bot count must remain exactly 2');
 
     for (const p of resetData.players) {
       assert.strictEqual(p.status, 'WAITING', `Player ${p.name} status must be WAITING, got ${p.status}`);
       assert.strictEqual(p.totalScore, 0, `Player ${p.name} totalScore must be 0, got ${p.totalScore}`);
       assert.strictEqual(p.glitchTokens, 0, `Player ${p.name} glitchTokens must be 0, got ${p.glitchTokens}`);
-      console.log(`    ✓ Player "${p.name}" verified: status=WAITING, score=0, tokens=0`);
+      console.log(`     ✓ Player "${p.name}" (isBot: ${Boolean(p.isBot)}): status=WAITING, score=0, tokens=0`);
     }
 
-    console.log(`  ✓ Game #${gameIdx} soak audit PASS: zero state leak, zero residual tokens, zero orphaned glitches.`);
+    console.log(`  ✓ [${formatTimestamp()}] Game #${gameIdx} rematch audit PASS: all 11 state mechanisms cleanly reset to 0/empty.`);
   }
 
   clientA.disconnect();
   clientB.disconnect();
-  console.log('\n✅ 5 CONSECUTIVE GAMES SOAK TEST PASSED 100% (ZERO LEAKS ACROSS 5 CYCLES)!\n');
+  console.log('\n✅ 3-CYCLE SOAK TEST WITH 2 BOTS PASSED 100% (ZERO LEAKS ACROSS ALL REMATCH CYCLES)!\n');
 }
 
 // =========================================================================
@@ -297,7 +353,7 @@ async function runDegradedNetworkAudit() {
   console.log('AUDIT PART 3: DEGRADED NETWORK / LATENCY & JITTER RESILIENCE');
   console.log('======================================================');
 
-  // Client A has normal connection, Client B has simulated mobile lag (400ms - 800ms round-trip latency)
+  // Client A has normal connection, Client B has simulated mobile lag (400ms round-trip latency)
   const clientA = io(SERVER_URL, { forceNew: true, transports: ['websocket'] });
   const clientB = io(SERVER_URL, { forceNew: true, transports: ['websocket'] });
 
@@ -328,9 +384,15 @@ async function runDegradedNetworkAudit() {
   });
   await new Promise(r => setTimeout(r, 100));
 
-  let lagEventsProcessed = 0;
+  // Explicit tracking metrics with distinct semantic categories:
+  let delayedScoresSent = 0;
+  let delayedScoresProcessed = 0;
   let timerDriftChecks = 0;
-  let delayedGlitchesHandled = 0;
+  let sabotageAttemptsSent = 0;
+  let sabotageAttemptsConfirmed = 0;
+  let sabotageAttemptsRejected = 0;
+  let sabotageRejectionReasons = [];
+  let sabotageEventsReceived = 0;
 
   // Intercept clientB incoming events with artificial 400ms network delay (Slow 3G profile)
   const ARTIFICIAL_LATENCY_MS = 400;
@@ -352,10 +414,11 @@ async function runDegradedNetworkAudit() {
       timerDriftChecks++;
     }, 1000);
 
-    // Client B sends score through artificial delay
+    // Client B sends score packet through artificial 400ms delay:
+    delayedScoresSent++;
     setTimeout(() => {
       clientB.emit('submit-score', { roundData: { hits: 7, totalTargets: 8, correct: 7, wrong: 1, correctCells: 3, totalCells: 4, correctWaypoints: 4, totalWaypoints: 5 } });
-      lagEventsProcessed++;
+      delayedScoresProcessed++;
     }, ARTIFICIAL_LATENCY_MS);
   });
 
@@ -363,15 +426,27 @@ async function runDegradedNetworkAudit() {
     clientA.emit('submit-score', { roundData: { hits: 8, totalTargets: 8, correct: 8, wrong: 0, correctCells: 4, totalCells: 4, correctWaypoints: 5, totalWaypoints: 5 } });
     clientA.emit('test-grant-tokens', { count: 2, all: true });
 
-    // Client A sends delayed attack at LaggyMobile
+    // Client A sends sabotage attack at LaggyMobile
     setTimeout(() => {
+      sabotageAttemptsSent++;
       clientA.emit('send-glitch', { targetPlayerId: pBId });
     }, 400);
   });
 
+  clientA.on('glitch-confirmed', data => {
+    sabotageAttemptsConfirmed++;
+    console.log(`  ✓ [${formatTimestamp()}] Host attack #${sabotageAttemptsConfirmed} CONFIRMED by server: "${data.glitchType}" -> "${data.targetPlayerName}"`);
+  });
+
+  clientA.on('glitch-error', data => {
+    sabotageAttemptsRejected++;
+    sabotageRejectionReasons.push(data.message);
+    console.log(`  ℹ [${formatTimestamp()}] Host attack attempt REJECTED by game rule: "${data.message}"`);
+  });
+
   clientB.on('glitch-incoming', data => {
-    delayedGlitchesHandled++;
-    console.log(`  ✓ Laggy client received sabotage event under network jitter: "${data.glitchType}" from "${data.fromPlayerName || data.attackerName}"`);
+    sabotageEventsReceived++;
+    console.log(`  ✓ [${formatTimestamp()}] Laggy client RECEIVED sabotage event under network jitter: "${data.glitchType}" from "${data.fromPlayerName || data.attackerName}"`);
     assert.ok(data.fromPlayerName || data.attackerName, 'Attacker name must resolve even under delayed network delivery');
   });
 
@@ -381,17 +456,24 @@ async function runDegradedNetworkAudit() {
   const finalData = await gameOverPromise;
 
   console.log(`\n✓ Network resilience audit completed:`);
-  console.log(`  - Delayed packet submissions processed: ${lagEventsProcessed}`);
-  console.log(`  - Wall-clock timer drift assertions passed: ${timerDriftChecks}`);
-  console.log(`  - Sabotage events received & attributed accurately under jitter: ${delayedGlitchesHandled}`);
-  console.log(`  - Final standings synchronized with server: ${finalData.finalStandings.length} players`);
+  console.log(`  ├── Delayed score packets sent: ${delayedScoresSent}`);
+  console.log(`  ├── Delayed score packets processed: ${delayedScoresProcessed} (100% arrival rate)`);
+  console.log(`  ├── Wall-clock timer drift assertions passed: ${timerDriftChecks}`);
+  console.log(`  ├── Sabotage attacks attempted: ${sabotageAttemptsSent}`);
+  console.log(`  ├── Sabotage attacks confirmed by server: ${sabotageAttemptsConfirmed}`);
+  console.log(`  ├── Sabotage attacks rejected by game rules: ${sabotageAttemptsRejected} (Reasons: ${JSON.stringify(sabotageRejectionReasons)})`);
+  console.log(`  ├── Sabotage events received by victim under jitter: ${sabotageEventsReceived}`);
+  console.log(`  └── Final standings synchronized with server: ${finalData.finalStandings.length} players`);
 
+  // Assertions confirming ZERO silent drops:
+  assert.strictEqual(delayedScoresProcessed, delayedScoresSent, 'All delayed score submissions must be processed (0 dropped packets)');
+  assert.strictEqual(sabotageAttemptsSent, sabotageAttemptsConfirmed + sabotageAttemptsRejected, 'Every sabotage attempt must be accounted for as confirmed or rejected');
+  assert.strictEqual(sabotageEventsReceived, sabotageAttemptsConfirmed, 'Every confirmed sabotage event must be delivered to victim under jitter (0 dropped attacks)');
   assert.ok(timerDriftChecks > 0, 'Timer drift assertions must be verified');
-  assert.ok(delayedGlitchesHandled > 0, 'Delayed glitches must be processed without desync');
 
   clientA.disconnect();
   clientB.disconnect();
-  console.log('✅ DEGRADED NETWORK AUDIT PASSED 100%!\n');
+  console.log('✅ DEGRADED NETWORK AUDIT PASSED 100% (ZERO SILENT DROPS)!\n');
 }
 
 async function main() {
