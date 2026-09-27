@@ -2007,6 +2007,7 @@ body {
   align-items: center;
   gap: 8px;
   overflow: hidden;
+  min-width: 0;
 }
 
 .name-cell {
@@ -2023,6 +2024,25 @@ body {
 .td-rounds, .td-tokens {
   color: var(--color-text-muted);
   font-size: 13px;
+}
+
+/* Mobile Breakpoint for Final Standings Table:
+   On narrow screens (<= 520px), hide secondary columns (ROUNDS, TOKENS)
+   so the PLAYER name column has ample width to display full player names
+   alongside the avatar without truncation, clipping, or header collision. */
+@media (max-width: 520px) {
+  .table-header-row,
+  .table-row {
+    grid-template-columns: 44px 1fr 76px;
+    padding: 10px 12px;
+  }
+
+  .th-rounds,
+  .td-rounds,
+  .th-tokens,
+  .td-tokens {
+    display: none;
+  }
 }
 
 .results-actions {
